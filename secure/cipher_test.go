@@ -1,4 +1,4 @@
-// Copyright © 2023-2025 Johnnie Chen. All rights reserved.
+// Copyright © 2025 Johnnie Chen. All rights reserved.
 // See accompanying LICENSE file.
 
 package secure

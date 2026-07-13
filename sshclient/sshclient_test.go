@@ -13,6 +13,12 @@ var (
 	sshPort uint16 = 22
 )
 
+type FakeStream struct {
+}
+
+func (f *FakeStream) AppendLogf(format string, args ...any) {
+}
+
 func TestRunSSHCommand(t *testing.T) {
 	var sshHost = os.Getenv("TEST_SSH_HOST")
 	if sshHost != "" {
@@ -29,10 +35,9 @@ func TestRunSSHCommandStream(t *testing.T) {
 	if sshHost != "" {
 		var sshUser = os.Getenv("TEST_SSH_USER")
 		var sshPass = os.Getenv("TEST_SSH_PASS")
-		var stream = make(chan string, 1024)
+		var stream = new(FakeStream)
 		err := RunSSHCommandStream(sshHost, sshPort, sshUser, sshPass, "cat /proc/cpuinfo", stream)
 		assert.Equal(t, nil, err)
-		<-stream
 	}
 }
 

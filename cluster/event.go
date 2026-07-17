@@ -10,10 +10,9 @@ import (
 type NodeEventType int8
 
 const (
-	EventUnknown NodeEventType = 0
-	EventCreate  NodeEventType = 1
-	EventUpdate  NodeEventType = 2
-	EventDelete  NodeEventType = 3
+	EventCreate NodeEventType = 0
+	EventUpdate NodeEventType = 1
+	EventDelete NodeEventType = 2
 )
 
 func (e NodeEventType) String() string {

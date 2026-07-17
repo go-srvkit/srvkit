@@ -11,7 +11,6 @@ import (
 
 	"alexejk.io/go-xmlrpc"
 	"github.com/pkg/errors"
-
 	"gopkg.in/srvkit.v1/logger"
 )
 
@@ -265,11 +264,11 @@ func (r *RPCClient) UpdateAllConfig() error {
 		if err != nil {
 			return err
 		}
-		logger.LogInfof("stopped process group=%s", gname)
+		logger.Infof("stopped process group=%s", gname)
 		var hasFailed = false
 		for _, proc := range stopped {
 			if proc.Status == 30 {
-				logger.LogErrf("%s has problems; not removing", proc.Name)
+				logger.Errorf("%s has problems; not removing", proc.Name)
 				hasFailed = true
 			}
 		}
@@ -287,23 +286,20 @@ func (r *RPCClient) UpdateAllConfig() error {
 		if _, err = r.StopProcessGroup(gname); err != nil {
 			return err
 		}
-		logger.LogInfof("stopped process group=%s", gname)
+		logger.Infof("stopped process group=%s", gname)
 		if err = r.RemoveProcessGroup(gname); err != nil {
 			return err
 		}
 		if err = r.AddProcessGroup(gname); err != nil {
 			return err
 		}
-		logger.LogInfof("updated process group=%s", gname)
+		logger.Infof("updated process group=%s", gname)
 	}
 	for _, gname := range result.Added {
-		if _, found := validGroupNames[gname]; !found {
-			continue
-		}
 		if err = r.AddProcessGroup(gname); err != nil {
 			return err
 		}
-		logger.LogInfof("added process group=%s", gname)
+		logger.Infof("added process group=%s", gname)
 	}
 	return nil
 }

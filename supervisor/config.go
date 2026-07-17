@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"gopkg.in/ini.v1"
-	"server/base/misc"
+	"gopkg.in/srvkit.v1/collections/mapx"
 )
 
 func init() {
@@ -214,7 +214,7 @@ func WriteSupervisorConfig(conf *INIConfig, w io.Writer) error {
 			continue
 		}
 		section, _ := file.NewSection(item.Name)
-		var keys = misc.MapOrderedKeys(item.KeyValues)
+		var keys = mapx.MapOrderedKeys(item.KeyValues)
 		for i := 0; i < len(keys); i++ {
 			var key = keys[i]
 			if key != "" {

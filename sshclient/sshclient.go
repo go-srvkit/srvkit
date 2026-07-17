@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/melbahja/goph"
 	"gopkg.in/srvkit.v1/gutil"
@@ -74,8 +73,7 @@ func createSSHClient(host string, port uint16, user, pass string) (*goph.Client,
 		if er != nil {
 			return nil, er
 		}
-		var pass = unsafe.String(unsafe.SliceData(data), len(data))
-		auth = goph.Password(pass)
+		auth = goph.Password(string(data))
 	}
 
 	callback, err := goph.DefaultKnownHosts()
@@ -92,6 +90,7 @@ func createSSHClient(host string, port uint16, user, pass string) (*goph.Client,
 	})
 }
 
+// RunSSHCommand run ssh command
 func RunSSHCommand(host string, port uint16, user, pass, cmd string) ([]byte, error) {
 	if host == "" || user == "" {
 		return nil, fmt.Errorf("ssh host or user is empty")
@@ -116,9 +115,11 @@ func RunSSHCommand(host string, port uint16, user, pass, cmd string) ([]byte, er
 	if err = session.Run(cmd); err != nil {
 		return buf.b.Bytes(), err
 	}
+	defer session.Close()
 	return buf.b.Bytes(), nil
 }
 
+// RunSSHCommandStream run ssh command and write to log to stream
 func RunSSHCommandStream(host string, port uint16, user, pass, cmd string, cc StreamLogAppender) error {
 	if host == "" || user == "" {
 		return fmt.Errorf("ssh host or user is empty")
@@ -164,6 +165,7 @@ func RunSSHCommandStream(host string, port uint16, user, pass, cmd string, cc St
 	return session.Wait()
 }
 
+// ReadSSHFile read file from remote server
 func ReadSSHFile(host string, port uint16, user, pass, fullpath string) ([]byte, error) {
 	if host == "" || user == "" {
 		return nil, fmt.Errorf("ssh host or user is empty")
@@ -187,6 +189,7 @@ func ReadSSHFile(host string, port uint16, user, pass, fullpath string) ([]byte,
 	return io.ReadAll(f)
 }
 
+// WriteSSHFile write file to remote server
 func WriteSSHFile(host string, port uint16, user, pass, fullpath string, data []byte) error {
 	if host == "" || user == "" {
 		return fmt.Errorf("ssh host or user is empty")

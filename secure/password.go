@@ -6,20 +6,23 @@ package secure
 import (
 	"crypto/pbkdf2"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"gopkg.in/srvkit.v1/conv"
 )
 
 const RandomStringChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 const (
 	DefaultAlgorithm = "pbkdf2_sha256"
-	DefaultIteration = 10_000
+	DefaultIteration = 600_000
 	DefaultSaltBits  = 128
 )
 
@@ -66,5 +69,7 @@ func VerifyPassword(passwd, inputEncoded string) bool {
 	}
 	salt := parts[2]
 	var encoded = EncodePassword(passwd, []byte(salt), iterations)
-	return encoded == inputEncoded
+	var passwdBytes = conv.StrAsBytes(passwd)
+	var encodedBytes = conv.StrAsBytes(encoded)
+	return subtle.ConstantTimeCompare(passwdBytes, encodedBytes) == 1 // for Timing Attack
 }

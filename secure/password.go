@@ -69,7 +69,7 @@ func VerifyPassword(passwd, inputEncoded string) bool {
 	}
 	salt := parts[2]
 	var encoded = EncodePassword(passwd, []byte(salt), iterations)
-	var passwdBytes = conv.StrAsBytes(passwd)
+	var passwdBytes = conv.StrAsBytes(inputEncoded)
 	var encodedBytes = conv.StrAsBytes(encoded)
 	return subtle.ConstantTimeCompare(passwdBytes, encodedBytes) == 1 // for Timing Attack
 }

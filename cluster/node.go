@@ -29,9 +29,6 @@ const (
 	NodeKeyType      = "Type"
 	NodeKeyInterface = "Interface"
 	NodeKeyURI       = "URI"
-	NodeKeyMongoID   = "MongoID"
-	NodeKeyRedisID   = "RedisID"
-	NodeKeyStatus    = "Status"
 )
 
 // NodeInfo 节点基本信息
@@ -66,9 +63,24 @@ func (n NodeInfo) SetString(key, val string) {
 	n[key] = val
 }
 
+func (n NodeInfo) GetAny(key string) any {
+	if val, ok := n[key]; ok {
+		return val
+	}
+	return nil
+}
+
 func (n NodeInfo) GetString(key string) string {
 	if val, ok := n[key]; ok {
 		return conv.FormatAny(val)
+	}
+	return ""
+}
+
+func (n NodeInfo) GetJSONString(key string) string {
+	if val, ok := n[key]; ok {
+		data, _ := json.Marshal(val)
+		return string(data)
 	}
 	return ""
 }

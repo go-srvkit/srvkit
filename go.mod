@@ -8,7 +8,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.5.4
 	github.com/joho/godotenv v1.5.1
-	github.com/melbahja/goph v1.5.1
+	github.com/melbahja/goph/v2 v2.0.2
 	github.com/pierrec/lz4/v4 v4.1.27
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.21.0
@@ -30,7 +30,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kr/fs v0.1.0 // indirect
-	github.com/pkg/sftp v1.13.10 // indirect
+	github.com/pkg/sftp v1.13.11 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
@@ -40,7 +40,7 @@ require (
 	go.etcd.io/etcd/client/pkg/v3 v3.6.13 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect

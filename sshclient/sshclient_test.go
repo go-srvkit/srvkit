@@ -5,12 +5,14 @@ package sshclient
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 var (
-	sshPort uint16 = 22
+	sshPort        uint16 = 22
+	defaultTimeout        = time.Second * 5
 )
 
 type FakeStream struct {
@@ -24,7 +26,7 @@ func TestRunSSHCommand(t *testing.T) {
 	if sshHost != "" {
 		var sshUser = os.Getenv("TEST_SSH_USER")
 		var sshPass = os.Getenv("TEST_SSH_PASS")
-		output, err := RunSSHCommand(sshHost, sshPort, sshUser, sshPass, "cat /proc/cpuinfo")
+		output, err := RunSSHCommand(sshHost, sshPort, sshUser, sshPass, defaultTimeout, "cat /proc/cpuinfo")
 		assert.Equal(t, nil, err)
 		t.Logf("output: %s", output)
 	}
@@ -36,7 +38,7 @@ func TestRunSSHCommandStream(t *testing.T) {
 		var sshUser = os.Getenv("TEST_SSH_USER")
 		var sshPass = os.Getenv("TEST_SSH_PASS")
 		var stream = new(FakeStream)
-		err := RunSSHCommandStream(sshHost, sshPort, sshUser, sshPass, "cat /proc/cpuinfo", stream)
+		err := RunSSHCommandStream(sshHost, sshPort, sshUser, sshPass, defaultTimeout, "cat /proc/cpuinfo", stream)
 		assert.Equal(t, nil, err)
 	}
 }
@@ -46,7 +48,7 @@ func TestReadSSHFile(t *testing.T) {
 	if sshHost != "" {
 		var sshUser = os.Getenv("TEST_SSH_USER")
 		var sshPass = os.Getenv("TEST_SSH_PASS")
-		output, err := ReadSSHFile(sshHost, sshPort, sshUser, sshPass, "/etc/supervisord.conf")
+		output, err := ReadSSHFile(sshHost, sshPort, sshUser, sshPass, defaultTimeout, "/etc/supervisord.conf")
 		assert.Equal(t, nil, err)
 		t.Logf("output: %s", output)
 	}

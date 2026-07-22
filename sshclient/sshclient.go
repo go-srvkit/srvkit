@@ -11,13 +11,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
-	"github.com/melbahja/goph"
+	"github.com/melbahja/goph/v2"
 	"gopkg.in/srvkit.v1/gutil"
-
 	"gopkg.in/srvkit.v1/logger"
 )
 
@@ -43,59 +41,52 @@ func getDefaultSSHKeyFile() (string, error) {
 	if er != nil {
 		return "", er
 	}
-	var defaultKeyFile = filepath.Join(dirname, ".ssh/id_rsa")
-	if gutil.IsFileExist(defaultKeyFile) {
-		return defaultKeyFile, nil
-	}
-	if runtime.GOOS == "darwin" {
-		defaultKeyFile = filepath.Join(dirname, ".ssh/id_ed25519")
-		if gutil.IsFileExist(defaultKeyFile) {
-			return defaultKeyFile, nil
+	candidates := []string{"id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"}
+	for _, name := range candidates {
+		p := filepath.Join(dirname, ".ssh", name)
+		if gutil.IsFileExist(p) {
+			return p, nil
 		}
 	}
 	return "", errSSHKeyNotFound
 }
 
-func createSSHClient(host string, port uint16, user, pass string) (*goph.Client, error) {
-	var err error
-	var auth goph.Auth
-	if pass == "" {
-		keyFile, err := getDefaultSSHKeyFile()
-		if err != nil {
-			return nil, err
-		}
-		auth, err = goph.Key(keyFile, "")
-		if err != nil {
-			return nil, err
-		}
-	} else {
+// `pass` is base64-encoded raw cipher text
+func createSSHClient(host string, port uint16, user, pass string, timeout time.Duration) (*goph.Client, error) {
+	var opts []goph.Option
+	if timeout > 0 {
+		opts = append(opts, goph.WithTimeout(timeout))
+	}
+	if pass != "" {
 		data, er := base64.StdEncoding.DecodeString(pass)
 		if er != nil {
 			return nil, er
 		}
-		auth = goph.Password(string(data))
+		opts = append(opts, goph.WithPassword(string(data)))
+	} else {
+		keyFile, err := getDefaultSSHKeyFile()
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, goph.WithKeyFile(keyFile, ""))
 	}
-
-	callback, err := goph.DefaultKnownHosts()
-	if err != nil {
-		return nil, err
+	{
+		if homedir, er := os.UserHomeDir(); er == nil {
+			var filename = filepath.Join(homedir, ".ssh/known_hosts")
+			if gutil.IsFileExist(filename) {
+				opts = append(opts, goph.WithKnownHosts(filename))
+			}
+		}
 	}
-	return goph.NewConn(&goph.Config{
-		User:     user,
-		Addr:     host,
-		Port:     uint(port),
-		Auth:     auth,
-		Timeout:  time.Second * 3,
-		Callback: callback,
-	})
+	return goph.New(user, host, opts...)
 }
 
 // RunSSHCommand run ssh command
-func RunSSHCommand(host string, port uint16, user, pass, cmd string) ([]byte, error) {
+func RunSSHCommand(host string, port uint16, user, pass string, timeout time.Duration, cmd string) ([]byte, error) {
 	if host == "" || user == "" {
 		return nil, fmt.Errorf("ssh host or user is empty")
 	}
-	client, err := createSSHClient(host, port, user, pass)
+	client, err := createSSHClient(host, port, user, pass, timeout)
 	if err != nil {
 		logger.Errorf("create ssh client %s:%d failed: %v", host, port, err)
 		return nil, err
@@ -106,6 +97,8 @@ func RunSSHCommand(host string, port uint16, user, pass, cmd string) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
+	defer session.Close()
+
 	var buf singleWriter
 	session.Stdout = &buf
 	session.Stderr = &buf
@@ -115,16 +108,15 @@ func RunSSHCommand(host string, port uint16, user, pass, cmd string) ([]byte, er
 	if err = session.Run(cmd); err != nil {
 		return buf.b.Bytes(), err
 	}
-	defer session.Close()
 	return buf.b.Bytes(), nil
 }
 
 // RunSSHCommandStream run ssh command and write to log to stream
-func RunSSHCommandStream(host string, port uint16, user, pass, cmd string, cc StreamLogAppender) error {
+func RunSSHCommandStream(host string, port uint16, user, pass string, timeout time.Duration, cmd string, cc StreamLogAppender) error {
 	if host == "" || user == "" {
 		return fmt.Errorf("ssh host or user is empty")
 	}
-	client, err := createSSHClient(host, port, user, pass)
+	client, err := createSSHClient(host, port, user, pass, timeout)
 	if err != nil {
 		return err
 	}
@@ -166,11 +158,11 @@ func RunSSHCommandStream(host string, port uint16, user, pass, cmd string, cc St
 }
 
 // ReadSSHFile read file from remote server
-func ReadSSHFile(host string, port uint16, user, pass, fullpath string) ([]byte, error) {
+func ReadSSHFile(host string, port uint16, user, pass string, timeout time.Duration, fullpath string) ([]byte, error) {
 	if host == "" || user == "" {
 		return nil, fmt.Errorf("ssh host or user is empty")
 	}
-	client, err := createSSHClient(host, port, user, pass)
+	client, err := createSSHClient(host, port, user, pass, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -190,11 +182,11 @@ func ReadSSHFile(host string, port uint16, user, pass, fullpath string) ([]byte,
 }
 
 // WriteSSHFile write file to remote server
-func WriteSSHFile(host string, port uint16, user, pass, fullpath string, data []byte) error {
+func WriteSSHFile(host string, port uint16, user, pass string, timeout time.Duration, fullpath string, data []byte) error {
 	if host == "" || user == "" {
 		return fmt.Errorf("ssh host or user is empty")
 	}
-	client, err := createSSHClient(host, port, user, pass)
+	client, err := createSSHClient(host, port, user, pass, timeout)
 	if err != nil {
 		return err
 	}

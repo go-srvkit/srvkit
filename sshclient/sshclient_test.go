@@ -21,6 +21,12 @@ type FakeStream struct {
 func (f *FakeStream) AppendLogf(format string, args ...any) {
 }
 
+func TestRunSSHCommandSimple(t *testing.T) {
+	output, err := RunSSHCommand("10.23.0.76", 12122, "devel", "", defaultTimeout, "cat /proc/cpuinfo")
+	assert.Equal(t, nil, err)
+	t.Logf("output: %s", output)
+}
+
 func TestRunSSHCommand(t *testing.T) {
 	var sshHost = os.Getenv("TEST_SSH_HOST")
 	if sshHost != "" {

@@ -57,6 +57,9 @@ func createSSHClient(host string, port uint16, user, pass string, timeout time.D
 	if timeout > 0 {
 		opts = append(opts, goph.WithTimeout(timeout))
 	}
+	if port != 0 {
+		opts = append(opts, goph.WithPort(uint(port)))
+	}
 	if pass != "" {
 		data, er := base64.StdEncoding.DecodeString(pass)
 		if er != nil {

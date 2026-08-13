@@ -231,7 +231,7 @@ func (c *EtcdClient) ListNodes(ctx context.Context, dir string) ([]NodeInfo, int
 	for _, kv := range resp.Kvs {
 		var node NodeInfo
 		if err = unmarshalNode(kv.Value, &node); err != nil {
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("unmarshal node %s: %w", kv.Key, err)
 		}
 		nodes = append(nodes, node)
 	}

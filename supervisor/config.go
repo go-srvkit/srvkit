@@ -44,7 +44,7 @@ type ProgramConfig struct {
 	AutoStart             bool   `json:"autostart,omitempty" ini:"autostart,omitempty"`
 	StartSecs             int    `json:"startsecs,omitempty" ini:"startsecs,omitempty"`
 	StartRetries          int    `json:"startretries,omitempty" ini:"startretries,omitempty"`
-	AutoRestart           string `json:"autorestart,omitempty" ini:"auto_restart"`
+	AutoRestart           string `json:"autorestart,omitempty" ini:"autorestart"`
 	ExitCodes             []int  `json:"exitcodes,omitempty" ini:"exitcodes,omitempty"`
 	StopSignal            string `json:"stopsignal,omitempty" ini:"stopsignal,omitempty"`
 	StopWaitSecs          int    `json:"stopwaitsecs,omitempty" ini:"stopwaitsecs,omitempty"`
@@ -68,6 +68,7 @@ type ProgramConfig struct {
 	ServerUrl             string `json:"serverurl,omitempty" ini:"serverurl,omitempty"`
 }
 
+// 没有赋值的参数使用supervisor的默认值
 func addProgramToSection(prog ProgramConfig, section *ini.Section) {
 	section.NewKey("command", prog.Command)
 	if prog.ProcessName != "" {
@@ -89,10 +90,13 @@ func addProgramToSection(prog ProgramConfig, section *ini.Section) {
 	if prog.StartRetries > 0 {
 		section.NewKey("startretries", strconv.Itoa(prog.StartRetries))
 	}
-	if prog.AutoRestart != "" {
-		section.NewKey("autorestart", prog.AutoRestart)
+	if prog.AutoRestart == "" {
+		prog.AutoRestart = "false" // 默认不自动重启
 	}
-	section.NewKey("directory", prog.Directory)
+	section.NewKey("autorestart", prog.AutoRestart)
+	if prog.Directory != "" {
+		section.NewKey("directory", prog.Directory)
+	}
 	if len(prog.ExitCodes) > 0 {
 		var sb strings.Builder
 		for i, code := range prog.ExitCodes {

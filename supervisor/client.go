@@ -27,7 +27,11 @@ type RPCClient struct {
 
 // NewRPCClient create a RPCClient object
 func NewRPCClient(serverUrl string) *RPCClient {
-	client, _ := xmlrpc.NewClient(serverUrl)
+	client, err := xmlrpc.NewClient(serverUrl)
+	if err != nil {
+		logger.Errorf("cannot create xmlrpc client: %v", err)
+		return nil
+	}
 	return &RPCClient{
 		serverUrl: serverUrl,
 		Client:    client,

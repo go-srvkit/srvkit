@@ -61,6 +61,7 @@ func GetEnvBool(key string) bool {
 	return false
 }
 
+// LoadDotEnv 加载环境变量文件，内部会overload，即`.env`内优先级高于进程继承的环境变量
 func LoadDotEnv(filenames ...string) error {
 	if len(filenames) == 0 {
 		filenames = []string{".env"}

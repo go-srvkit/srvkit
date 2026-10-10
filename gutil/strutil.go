@@ -6,6 +6,7 @@ package gutil
 import (
 	"math/rand"
 	"unicode"
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -31,7 +32,7 @@ func RandBytes(length int) []byte {
 	}
 	result := make([]byte, length)
 	for i := 0; i < length; i++ {
-		ch := uint8(rand.Int31() % 0xFF)
+		ch := byte(rand.Intn(256))
 		result[i] = ch
 	}
 	return result
@@ -67,18 +68,18 @@ func Reverse(str string) string {
 	return string(runes)
 }
 
-// LongestCommonPrefix 字符串最长共同前缀
+// LongestCommonPrefix 按 Unicode 码点比较字符串，返回 s1 中的最长共同前缀。
 func LongestCommonPrefix(s1, s2 string) string {
-	if s1 == "" || s2 == "" {
-		return ""
-	}
-	i := 0
-	for i < len(s1) && i < len(s2) {
-		if s1[i] == s2[i] {
-			i++
-			continue
+	j := 0
+	for i, r1 := range s1 {
+		if j >= len(s2) {
+			return s1[:i]
 		}
-		break
+		r2, size := utf8.DecodeRuneInString(s2[j:])
+		if r1 != r2 {
+			return s1[:i]
+		}
+		j += size
 	}
-	return s1[:i]
+	return s1
 }

@@ -31,6 +31,7 @@ func ZeroOf[T any]() T {
 func JSONParse(s string, v any) error {
 	var dec = json.NewDecoder(strings.NewReader(s))
 	dec.UseNumber()
+	// 注意：尾随空白字串如 `{"a":1}garbage` 也会被解析成功
 	if err := dec.Decode(v); err != nil {
 		return err
 	}
@@ -43,13 +44,22 @@ func JSONParseTo(s string, dst proto.Message) error {
 }
 
 // JSONStringify 序列化为json字符串
-func JSONStringify(v any) string {
+func JSONStringify(v any) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		logger.Errorf("JSONStringify %T: %v", v, err)
+		return "", err
+	}
+	s := unsafe.String(unsafe.SliceData(data), len(data))
+	return s, nil
+}
+
+func JSONMustStringify(v any) string {
+	s, err := JSONStringify(v)
+	if err != nil {
+		logger.Panicf("JSONMustStringify: %v", err)
 		return ""
 	}
-	return unsafe.String(unsafe.SliceData(data), len(data))
+	return s
 }
 
 // JSONStringifyOf 序列化proto消息为json格式
@@ -63,7 +73,8 @@ func JSONStringifyOf(msg proto.Message) (string, error) {
 		return "", err
 	}
 	var data = buf.Bytes()
-	return unsafe.String(unsafe.SliceData(data), len(data)), nil
+	s := unsafe.String(unsafe.SliceData(data), len(data))
+	return s, nil
 }
 
 func MD5Sum(data []byte) string {
@@ -91,8 +102,10 @@ func RuntimeMemBytes() uint64 {
 	return memStats.HeapAlloc
 }
 
-// IsFileExist 文件是否存在
-func IsFileExist(filename string) bool {
+// IsFileNotExist reports whether filename does not exist.
+// Other errors, such as permission errors, return false.
+// It checks the symbolic link itself, not its target.
+func IsFileNotExist(filename string) bool {
 	_, err := os.Lstat(filename)
-	return !os.IsNotExist(err)
+	return os.IsNotExist(err)
 }

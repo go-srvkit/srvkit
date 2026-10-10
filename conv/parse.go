@@ -303,6 +303,12 @@ func ParseTo[T cmp.Ordered | bool](s string) (T, error) {
 		} else {
 			return any(n).(T), nil
 		}
+	case uintptr:
+		if n, err := strconv.ParseUint(s, 10, strconv.IntSize); err != nil {
+			return zero, err
+		} else {
+			return any(uintptr(n)).(T), nil
+		}
 	case float32:
 		if n, err := ParseF32(s); err != nil {
 			return zero, err

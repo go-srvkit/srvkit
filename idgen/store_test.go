@@ -7,25 +7,37 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 var (
 	redisAddr = os.Getenv("TEST_REDIS_ADDR")
 	mongoUri  = os.Getenv("TEST_MONGO_URI")
+	etcdUri   = os.Getenv("TEST_ETCD_URI")
 )
 
 func createCounterStorage(storeTye string, label string) CounterStore {
 	switch storeTye {
 	case "mongo":
 		var db = "testdb"
-		store := NewMongoDBCounter(mongoUri, db, label)
+		store := NewMongoDBCounter(mongoUri, db, label, DefaultSeqIDStep)
 		store.Init(context.Background())
 		return store
 	case "redis":
 		return NewRedisCounter(redisAddr, label)
+
+	case "etcd":
+		cfg := clientv3.Config{
+			Endpoints:   strings.Split(etcdUri, ","),
+			DialTimeout: 5 * time.Second,
+		}
+		c, _ := NewEtcdCounter(cfg, label)
+		return c
 	default:
 		panic(fmt.Sprintf("invalid storage type %s", storeTye))
 	}
@@ -93,7 +105,7 @@ func (ctx *IDGenWorkerContext) Duration() time.Duration {
 
 func runSeqIDTestSimple(t *testing.T, ctx context.Context, storeTye, label string) {
 	var store = createCounterStorage(storeTye, label)
-	var seq = NewSegmentIDGen(store, DefaultSeqIDStep)
+	var seq = NewSegmentIDGen(store)
 	if err := seq.Init(ctx); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -116,7 +128,7 @@ func runSeqIDTestConcurrent(t *testing.T, ctx context.Context, storeTye, label s
 	var gcnt = 20
 	var eachMax = 500000
 	var store = createCounterStorage(storeTye, label)
-	var seq = NewSegmentIDGen(store, DefaultSeqIDStep)
+	var seq = NewSegmentIDGen(store)
 	if err := seq.Init(ctx); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -138,7 +150,7 @@ func runSeqIDTestDistributed(t *testing.T, ctx context.Context, storeTye, label 
 	var eachMax = 500000
 	var generator = func() IDGenerator {
 		var store = createCounterStorage(storeTye, label)
-		var seq = NewSegmentIDGen(store, DefaultSeqIDStep)
+		var seq = NewSegmentIDGen(store)
 		if err := seq.Init(ctx); err != nil {
 			t.Fatalf("Init: %v", err)
 		}

@@ -33,13 +33,14 @@ func TestSnowflakeLimit(t *testing.T) {
 func TestSnowflake_ClockBackwards(t *testing.T) {
 	var count = 0
 	var realTimeUnit = func() int64 { return (time.Now().UTC().UnixNano() - CustomEpoch) / TimeUnit }
-	gomonkey.ApplyFunc(currentTimeUnit, func() int64 {
+	var patch = gomonkey.ApplyFunc(currentTimeUnit, func() int64 {
 		count++
 		if count%10 == 0 {
 			return realTimeUnit() - 50
 		}
 		return realTimeUnit()
 	})
+	defer patch.Reset()
 
 	var dict = make(map[int64]bool)
 	var sf = NewSnowflake(1)

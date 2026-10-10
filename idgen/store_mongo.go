@@ -20,27 +20,43 @@ const CollectionName = "uuid"
 type Counter struct {
 	Label string `bson:"label"`   // 识别符
 	Value int64  `bson:"counter"` // 计数器
+	Step  int32  `bson:"step" `   // 步长
 }
 
 // MongoDBCounter 使用MongoDB的自增计数器
 type MongoDBCounter struct {
-	guard sync.Mutex    //
-	uri   string        // 连接uri
-	db    string        // DB名称
-	label string        // 识别符
+	guard sync.Mutex //
+	uri   string     // 连接uri
+	db    string     // DB名称
+	label string     // 识别符
+	step  int32
 	cli   *mongo.Client //
 }
 
-func NewMongoDBCounter(uri, db, label string) CounterStore {
+func NewMongoDBCounter(uri, db, label string, step int32) CounterStore {
 	return &MongoDBCounter{
 		uri:   uri,
 		db:    db,
 		label: label,
+		step:  step,
 	}
 }
 
 func (s *MongoDBCounter) Init(ctx context.Context) error {
 	if err := s.createConn(ctx); err != nil {
+		return err
+	}
+	return s.initIndex(ctx)
+}
+
+func (s *MongoDBCounter) initIndex(ctx context.Context) error {
+	var collection = s.cli.Database(s.db).Collection(CollectionName,
+		options.Collection().SetWriteConcern(writeconcern.Majority()))
+	index := mongo.IndexModel{
+		Keys:    bson.D{{Key: "label", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	}
+	if _, err := collection.Indexes().CreateOne(ctx, index); err != nil {
 		return err
 	}
 	return nil
@@ -71,8 +87,12 @@ func (s *MongoDBCounter) Incr(ctx context.Context) (int64, error) {
 	s.guard.Lock()
 	defer s.guard.Unlock()
 
+	if s.cli == nil {
+		return 0, ErrStoreClosed
+	}
 	var ctr = &Counter{
 		Label: s.label,
+		Step:  s.step,
 	}
 	// 把counter自增再读取最新的counter
 	if err := s.IncrementAndLoad(ctx, 1, ctr); err != nil {

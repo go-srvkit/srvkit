@@ -6,7 +6,6 @@ package idgen
 import (
 	"errors"
 	"log"
-	"net"
 	"sync"
 	"time"
 )
@@ -50,8 +49,10 @@ var (
 // 设计中增加了时钟回拨标记位，可以让系统(重启前)在时钟被回拨时仍正确工作，但时钟回拨标记位有限并且未存档，时钟回拨位用完后
 // 如果系统有重启，仍然会有ID重复的可能。
 //
-// 3. Worker ID的分配
-// WorkerID跟原版实现一样人工分配，靠配置参数保证唯一性
+// 4，回拨标记位
+// 时间戳减少1 bit表示范围期限下降一半，当前使用的1个回拨位是一个合理的容错折中。
+// 标记位的多少本质上的思考是当时钟异常时允许发号暂停多久，即可用性限制， 增加1位只是把问题放到了第4次回拨，没有本质上的不同。
+//
 
 type Snowflake struct {
 	guard        sync.Mutex // 线程安全
@@ -63,11 +64,8 @@ type Snowflake struct {
 
 }
 
+// NewSnowflake 创建一个雪花ID，`workerId`限定范围在0x1FFF内
 func NewSnowflake(workerId uint16) *Snowflake {
-	if workerId == 0 {
-		workerId = privateIP4()
-		log.Printf("snowflake auto set worker id to %d", workerId)
-	}
 	return &Snowflake{
 		workerId:     int64(workerId) & WorkIDMask,
 		lastTimeUnit: currentTimeUnit(),
@@ -84,19 +82,30 @@ func (sf *Snowflake) maskClockBackwards() error {
 }
 
 // sequence expired, tick to next time unit
-func (sf *Snowflake) waitTilNext(lastTimeUnit int64) (int64, error) {
-	for i := 0; i < 20; i++ {
-		time.Sleep(50 * time.Millisecond)
+func (sf *Snowflake) waitTilNextWithoutGuard(lastTimeUnit int64) (int64, error) {
+	const pollInterval = time.Millisecond * 5
+	var deadline = time.Now().Add(time.Millisecond * 1500) // 设置超时
+	for {
 		var now = currentTimeUnit()
 		if now > lastTimeUnit {
+			if now > MaxTimeUnits {
+				return 0, ErrTimeUnitOverflow // 时间单位越界
+			}
 			return now, nil
 		}
-		// sleep期间时钟是否又被回拨了
 		if now < lastTimeUnit {
-			break // 当 wall-clock 已经不可信时，snowflake是否可以仍然“假装时间在前进“？
+			return 0, ErrClockGoneBackwards // sleep期间时钟发生了回拨
 		}
+		var remain = time.Until(deadline)
+		if remain <= 0 {
+			return 0, ErrClockGoneBackwards // 此回拨恢复超时
+		}
+		var sleep = pollInterval
+		if remain < sleep {
+			sleep = remain
+		}
+		time.Sleep(sleep)
 	}
-	return 0, ErrClockGoneBackwards
 }
 
 func (sf *Snowflake) Next() (int64, error) {
@@ -112,7 +121,7 @@ func (sf *Snowflake) Next() (int64, error) {
 	if curTimeUnits < sf.lastTimeUnit {
 		// 如果只是回拨了1个时间单元，就等待一下时钟
 		if curTimeUnits+1 == sf.lastTimeUnit {
-			if ts, err := sf.waitTilNext(curTimeUnits); err != nil {
+			if ts, err := sf.waitTilNextWithoutGuard(curTimeUnits); err != nil {
 				return 0, err
 			} else {
 				curTimeUnits = ts
@@ -130,7 +139,7 @@ func (sf *Snowflake) Next() (int64, error) {
 		sf.seq++
 		// 如果序列号满了，需要等待时钟走到下一个时间单元
 		if sf.seq > MaxSeqID {
-			if ts, err := sf.waitTilNext(curTimeUnits); err != nil {
+			if ts, err := sf.waitTilNextWithoutGuard(curTimeUnits); err != nil {
 				return 0, err
 			} else {
 				curTimeUnits = ts
@@ -161,27 +170,4 @@ func (sf *Snowflake) MustNext() int64 {
 
 func currentTimeUnit() int64 {
 	return (time.Now().UTC().UnixNano() - CustomEpoch) / TimeUnit
-}
-
-// lower 16-bits of IPv4
-func privateIP4() uint16 {
-	addr, err := net.InterfaceAddrs()
-	if err != nil {
-		return 0
-	}
-	var isPrivateIPv4 = func(ip net.IP) bool {
-		return ip[0] == 10 || ip[0] == 172 && (ip[1] >= 16 &&
-			ip[1] < 32) || ip[0] == 192 && ip[1] == 168
-	}
-	for _, a := range addr {
-		ipnet, ok := a.(*net.IPNet)
-		if !ok || ipnet.IP.IsLoopback() {
-			continue
-		}
-		var ip = ipnet.IP.To4()
-		if ip != nil && isPrivateIPv4(ip) {
-			return uint16(ip[2])<<8 + uint16(ip[3])
-		}
-	}
-	return 0
 }

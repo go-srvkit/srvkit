@@ -12,6 +12,7 @@ import (
 )
 
 // RedisCounter 基于redis INCR命令实现的计数器
+// 注意：Redis默认是异步复制，并非强一致系统，某些故障条件下已确认写入仍可能丢失key，导致分配ID错误
 type RedisCounter struct {
 	guard  sync.Mutex    //
 	addr   string        // redis服务器地址
@@ -33,7 +34,18 @@ func NewRedisCounter(addr, key string) CounterStore {
 }
 
 func (s *RedisCounter) Init(ctx context.Context) error {
-	return s.client.Ping(ctx).Err()
+	err := s.client.Ping(ctx).Err()
+	if err != nil {
+		return err
+	}
+	if _, err = s.Incr(ctx); err != nil {
+		return err
+	}
+	// 使用 PERSIST 禁止 TTL
+	if _, err = s.client.Persist(ctx, s.key).Result(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *RedisCounter) Close() error {
@@ -52,6 +64,9 @@ func (s *RedisCounter) Incr(ctx context.Context) (int64, error) {
 	s.guard.Lock()
 	defer s.guard.Unlock()
 
+	if s.client == nil {
+		return 0, ErrStoreClosed
+	}
 	ctr, err := s.doIncr(ctx)
 	if err != nil {
 		return 0, err
@@ -61,9 +76,9 @@ func (s *RedisCounter) Incr(ctx context.Context) (int64, error) {
 
 // 生产级的部署要持久化与高可用，需要开启AOF和半同步复制
 func (s *RedisCounter) doIncr(ctx context.Context) (int64, error) {
-	counter, err := s.client.Do(ctx, "INCR", s.key).Int64()
+	counter, err := s.client.Incr(ctx, s.key).Uint64()
 	if err != nil {
 		return 0, err
 	}
-	return counter, nil
+	return int64(counter), nil
 }

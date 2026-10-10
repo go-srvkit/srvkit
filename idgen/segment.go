@@ -51,22 +51,14 @@ func (g *SegmentIDGen) Next(ctx context.Context) (int64, error) {
 	g.guard.Lock()
 	defer g.guard.Unlock()
 
-	var nextId = g.lastID + 1
-	// 在当前号段内，直接分配
-	if nextId <= g.maxID {
-		g.lastID = nextId
-		return nextId, nil
+	if g.lastID >= g.maxID {
+		// 需要重新申请号段
+		if err := g.reload(ctx); err != nil {
+			return 0, err
+		}
 	}
-	// 需要重新申请号段
-	if err := g.reload(ctx); err != nil {
-		return 0, err
-	}
-	nextId = g.lastID + 1
-	if nextId > g.maxID {
-		return 0, errSegmentIDOverflow
-	}
-	g.lastID = nextId
-	return nextId, nil
+	g.lastID++
+	return g.lastID, nil
 }
 
 func (g *SegmentIDGen) MustNext(ctx context.Context) int64 {

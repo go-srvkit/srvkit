@@ -55,8 +55,7 @@ func TestParseDuration(t *testing.T) {
 	for i, tt := range testDurationCases {
 		d, err := ParseDuration(tt.Text)
 		if err != nil {
-			t.Logf("index %d -> in: %s returned: %v\tnot equal to %s", i, tt.Text, err, tt.Duration.String())
-
+			t.Errorf("index %d -> in: %s returned: %v\tnot equal to %s", i, tt.Text, err, tt.Duration.String())
 		} else if tt.Duration != d {
 			t.Errorf("index %d -> in: %s returned: %s\tnot equal to %s", i, tt.Text, d.String(), tt.Duration.String())
 		}

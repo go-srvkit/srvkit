@@ -4,6 +4,8 @@
 package datetime
 
 import (
+	"math"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,35 +25,54 @@ const (
 )
 
 var (
+	// FirstDayIsMonday 只能在启动阶段、并发调用日期函数之前配置。
 	FirstDayIsMonday = false
-	DefaultLoc       = time.UTC
 
-	timeOffset int64 // 毫秒时间偏移
+	timeOffset atomic.Int64 // 毫秒时间偏移
 )
 
-// ResetOffset 重置时间偏移
+// ResetOffset 重置时间偏移，可并发调用。
 func ResetOffset() {
-	timeOffset = 0
+	timeOffset.Store(0)
 }
 
-// AddOffset 增加时间偏移
+// AddOffset 增加毫秒时间偏移，可并发调用；溢出时钳制到 int64 边界。
 func AddOffset(ms int64) {
-	timeOffset += ms
+	for {
+		old := timeOffset.Load()
+		if timeOffset.CompareAndSwap(old, addMilliseconds(old, ms)) {
+			return
+		}
+	}
 }
 
-// GetOffset 获取时间偏移
+// GetOffset 获取毫秒时间偏移，可并发调用。
 func GetOffset() int64 {
-	return timeOffset
+	return timeOffset.Load()
 }
 
-// Now 获取当前时间（包含时间偏移）
+// Now 获取 UTC 当前时间（包含时间偏移），可并发调用。
+// 偏移后的 Unix 毫秒时间戳溢出时钳制到 int64 边界，保留亚毫秒精度。
 func Now() time.Time {
-	return time.Now().UTC().Add(time.Duration(timeOffset) * time.Millisecond)
+	now := time.Now()
+	ms := addMilliseconds(now.UnixMilli(), timeOffset.Load())
+	return time.UnixMilli(ms).Add(time.Duration(now.Nanosecond() % int(time.Millisecond))).UTC()
 }
 
-// NowMS 获取当前时间毫秒（包含时间偏移）
+// NowMS 获取当前 Unix 毫秒时间戳（包含时间偏移），可并发调用。
+// 溢出时钳制到 int64 边界。
 func NowMS() int64 {
-	return time.Now().UTC().UnixMilli() + timeOffset
+	return addMilliseconds(time.Now().UnixMilli(), timeOffset.Load())
+}
+
+func addMilliseconds(a, b int64) int64 {
+	if b > 0 && a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	if b < 0 && a < math.MinInt64-b {
+		return math.MinInt64
+	}
+	return a + b
 }
 
 func FormatTime(t time.Time) string {
@@ -78,13 +99,13 @@ func FormatNanoTimeUTC(nano int64) string {
 	return time.Unix(0, nano).UTC().Format(MicroTimeLayout)
 }
 
+// TimeOfMS 将 Unix 毫秒时间戳转换为 UTC 时间。
+// 为兼容现有调用，0 表示未设置，返回 time.Time{}，而非 Unix epoch。
 func TimeOfMS(ms int64) time.Time {
-	var t time.Time
 	if ms == 0 {
-		return t
+		return time.Time{}
 	}
-	var nano = ms * int64(time.Millisecond)
-	return time.Unix(0, nano).UTC()
+	return time.UnixMilli(ms).UTC()
 }
 
 func UTCTimeOfMS(ms int64) time.Time {
@@ -96,37 +117,41 @@ func IsLeapYear(year int) bool {
 	return (year%4 == 0 && year%100 != 0) || year%400 == 0
 }
 
-// MidnightTimeOf 当日零点
+// MidnightTimeOf UTC 当日零点。
 func MidnightTimeOf(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	year, month, day := t.UTC().Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
-// NextMidnight 下一个凌晨
+// NextMidnight 下一个 UTC 零点的 Unix 毫秒时间戳。
+// 此函数的输入 0 表示 Unix epoch；超出 int64 范围时返回 math.MaxInt64。
 func NextMidnight(ts int64) int64 {
-	var midTime = MidnightTimeOf(TimeOfMS(ts))
-	return midTime.UnixNano()/int64(time.Millisecond) + MsPerDay
+	elapsed := ts % MsPerDay
+	if elapsed < 0 {
+		elapsed += MsPerDay
+	}
+	return addMilliseconds(ts, MsPerDay-elapsed)
 }
 
-// GetNextMonday 计算当前时间的下周一的凌晨0点
+// 各个星期到其下周一的天数
+var weekdayOffsetDays = [7]int32{1, 7, 6, 5, 4, 3, 2}
+
+// GetNextMonday 计算 UTC 时间的下周一零点；周一输入返回七天后的零点。
 func GetNextMonday(now time.Time) time.Time {
-	// 各个星期到其下周一的天数
-	var offsetDays = [7]int32{1, 7, 6, 5, 4, 3, 2}
-
-	var elapsedDays = offsetDays[now.Weekday()]
-	year, month, day := now.Date()
-	var t = time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	return t.Add(time.Hour * 24 * time.Duration(elapsedDays))
+	now = now.UTC()
+	var elapsedDays = weekdayOffsetDays[now.Weekday()]
+	return MidnightTimeOf(now).AddDate(0, 0, int(elapsedDays))
 }
 
-// ThisMomentAfterDays N天后的这个时候
+// ThisMomentAfterDays 按 UTC 日历计算 N 天后的这个时候，返回 UTC 时间。
 func ThisMomentAfterDays(this time.Time, days int) time.Time {
 	if days == 0 {
-		return this
+		return this.UTC()
 	}
-	return this.Add(time.Duration(days) * time.Hour * 24)
+	return this.UTC().AddDate(0, 0, days)
 }
 
-// StartingOfWeek 本周的起点
+// StartingOfWeek UTC 本周零点，周首由 FirstDayIsMonday 决定。
 func StartingOfWeek(t time.Time) time.Time {
 	t2 := MidnightTimeOf(t)
 	weekday := int(t2.Weekday())
@@ -136,11 +161,10 @@ func StartingOfWeek(t time.Time) time.Time {
 		}
 		weekday = weekday - 1
 	}
-	d := time.Duration(-weekday) * 24 * time.Hour
-	return t2.Add(d)
+	return t2.AddDate(0, 0, -weekday)
 }
 
-// EndOfWeek 本周的最后一天
+// EndOfWeek UTC 本周最后一天的 23:59:59，保留秒级精度。
 func EndOfWeek(t time.Time) time.Time {
 	begin := StartingOfWeek(t)
 	end := ThisMomentAfterDays(begin, 7)
@@ -149,37 +173,21 @@ func EndOfWeek(t time.Time) time.Time {
 
 // FirstDayOfYear 年度第一天
 func FirstDayOfYear(year int) time.Time {
-	return time.Date(year, 1, 1, 0, 0, 0, 0, DefaultLoc)
+	return time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 }
 
 // LastDayOfYear 年度最后一天
 func LastDayOfYear(year int) time.Time {
-	return time.Date(year, 12, 31, 0, 0, 0, 0, DefaultLoc)
+	return time.Date(year, 12, 31, 0, 0, 0, 0, time.UTC)
 }
 
-// ElapsedDaysBetween 获取两个时间中经过的天数
+// ElapsedDaysBetween 获取两个时间的 UTC 日历日期差，忽略日内时间。
+// 返回值为 end 日期减 start 日期；不按 24 小时的经过时长计算。
 func ElapsedDaysBetween(start, end time.Time) int {
-	var negative = false
-	if start.After(end) {
-		start, end = end, start
-		negative = true
-	}
-	var days = 0
-	if start.Year() != end.Year() {
-		t := LastDayOfYear(start.Year())
-		days = t.YearDay() - start.YearDay() // start年份的天数
-		for i := start.Year() + 1; i < end.Year(); i++ {
-			var t1 = LastDayOfYear(i)
-			days += t1.YearDay() // start-end中间每年的天数
-		}
-		days += end.YearDay() // end年份的天数
-	} else {
-		days = end.YearDay() - start.YearDay()
-	}
-	if negative {
-		days = -days
-	}
-	return days
+	// UTC 零点的秒数是整日的倍数；先除后减避免大跨度的 Duration 溢出。
+	startDay := MidnightTimeOf(start).Unix() / SecondsPerDay
+	endDay := MidnightTimeOf(end).Unix() / SecondsPerDay
+	return int(endDay - startDay)
 }
 
 // DaysCountOfMonth 一个月的天数

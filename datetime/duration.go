@@ -9,20 +9,21 @@ import (
 )
 
 const (
+	// Day 和 Week 表示固定经过时长，不代表本地时区的日历日或日历周。
 	Day  = 24 * time.Hour
 	Week = 7 * Day
 )
 
-var unitMap = map[string]int64{
-	"ns": int64(time.Nanosecond),
-	"us": int64(time.Microsecond),
-	"µs": int64(time.Microsecond), // U+00B5 = micro symbol
-	"μs": int64(time.Microsecond), // U+03BC = Greek letter mu
-	"ms": int64(time.Millisecond),
-	"s":  int64(time.Second),
-	"m":  int64(time.Minute),
-	"h":  int64(time.Hour),
-	"d":  int64(Day),
+var unitMap = map[string]uint64{
+	"ns": uint64(time.Nanosecond),
+	"us": uint64(time.Microsecond),
+	"µs": uint64(time.Microsecond), // U+00B5 = micro symbol
+	"μs": uint64(time.Microsecond), // U+03BC = Greek letter mu
+	"ms": uint64(time.Millisecond),
+	"s":  uint64(time.Second),
+	"m":  uint64(time.Minute),
+	"h":  uint64(time.Hour),
+	"d":  uint64(Day),
 }
 
 // ParseDuration parses a duration string, this extends `time.ParseDuration` with days
@@ -33,7 +34,7 @@ var unitMap = map[string]int64{
 func ParseDuration(s string) (time.Duration, error) {
 	// [-+]?([0-9]*(\.[0-9]*)?[a-z]+)+
 	orig := s
-	var d int64
+	var d uint64
 	neg := false
 
 	// Consume [-+]?
@@ -53,7 +54,7 @@ func ParseDuration(s string) (time.Duration, error) {
 	}
 	for s != "" {
 		var (
-			v, f  int64       // integers before, after decimal point
+			v, f  uint64      // integers before, after decimal point
 			scale float64 = 1 // value = v + f/scale
 		)
 
@@ -101,29 +102,32 @@ func ParseDuration(s string) (time.Duration, error) {
 		if !ok {
 			return 0, errors.New("ParseDuration: unknown unit " + quote(u) + " in duration " + quote(orig))
 		}
-		if v > (1<<63-1)/unit {
+		if v > (1<<63)/unit {
 			// overflow
 			return 0, errors.New("ParseDuration: invalid duration " + quote(orig))
 		}
 		v *= unit
 		if f > 0 {
 			// float64 is needed to be nanosecond accurate for fractions of hours.
-			// v >= 0 && (f*unit/scale) <= 3.6e+12 (ns/h, h is the largest unit)
-			v += int64(float64(f) * (float64(unit) / scale))
-			if v < 0 {
+			// The largest unit is a fixed 24-hour day.
+			v += uint64(float64(f) * (float64(unit) / scale))
+			if v > 1<<63 {
 				// overflow
 				return 0, errors.New("ParseDuration: invalid duration " + quote(orig))
 			}
 		}
-		d += v
-		if d < 0 {
+		if v > (1<<63)-d {
 			// overflow
 			return 0, errors.New("ParseDuration: invalid duration " + quote(orig))
 		}
+		d += v
 	}
 
 	if neg {
-		d = -d
+		return -time.Duration(d), nil
+	}
+	if d > 1<<63-1 {
+		return 0, errors.New("ParseDuration: invalid duration " + quote(orig))
 	}
 	return time.Duration(d), nil
 }
@@ -135,19 +139,19 @@ func quote(s string) string {
 var errLeadingInt = errors.New("ParseDuration: bad [0-9]*") // never printed
 
 // leadingInt consumes the leading [0-9]* from s.
-func leadingInt(s string) (x int64, rem string, err error) {
+func leadingInt(s string) (x uint64, rem string, err error) {
 	i := 0
 	for ; i < len(s); i++ {
 		c := s[i]
 		if c < '0' || c > '9' {
 			break
 		}
-		if x > (1<<63-1)/10 {
+		if x > (1<<63)/10 {
 			// overflow
 			return 0, "", errLeadingInt
 		}
-		x = x*10 + int64(c) - '0'
-		if x < 0 {
+		x = x*10 + uint64(c) - '0'
+		if x > 1<<63 {
 			// overflow
 			return 0, "", errLeadingInt
 		}
@@ -158,7 +162,7 @@ func leadingInt(s string) (x int64, rem string, err error) {
 // leadingFraction consumes the leading [0-9]* from s.
 // It is used only for fractions, so does not return an error on overflow,
 // it just stops accumulating precision.
-func leadingFraction(s string) (x int64, scale float64, rem string) {
+func leadingFraction(s string) (x uint64, scale float64, rem string) {
 	i := 0
 	scale = 1
 	overflow := false
@@ -175,8 +179,8 @@ func leadingFraction(s string) (x int64, scale float64, rem string) {
 			overflow = true
 			continue
 		}
-		y := x*10 + int64(c) - '0'
-		if y < 0 {
+		y := x*10 + uint64(c) - '0'
+		if y > 1<<63 {
 			overflow = true
 			continue
 		}
@@ -188,94 +192,44 @@ func leadingFraction(s string) (x int64, scale float64, rem string) {
 
 // PrettyDuration returns a string representing the duration in the form of "4d2h3m5s".
 func PrettyDuration(d time.Duration) string {
-	// Largest time is `-106751d23h47m16.854775807s`
-	var buf [32]byte
-	w := len(buf)
-
 	u := uint64(d)
-	neg := d < 0
-	if neg {
+	if d < 0 {
 		u = -u
 	}
-
-	// Special case: if duration is smaller than a second,
-	// use smaller units, like 1.2ms
 	if u < uint64(time.Second) {
-		var prec int
+		return d.String()
+	}
+	return prettyDuration(u/uint64(time.Second), u%uint64(time.Second), d < 0)
+}
+
+// prettyDuration formats an unsigned duration of at least one second.
+// Keeping seconds and fractional nanoseconds separate also supports int64 milliseconds.
+func prettyDuration(seconds, nanos uint64, neg bool) string {
+	var buf [32]byte
+	w := len(buf)
+	if seconds%60 != 0 || nanos != 0 {
 		w--
 		buf[w] = 's'
-		w--
-		switch {
-		case u == 0:
-			return "0s"
-		case u < uint64(time.Microsecond):
-			// print nanoseconds
-			prec = 0
-			buf[w] = 'n'
-		case u < uint64(time.Millisecond):
-			// print microseconds
-			prec = 3
-			// U+00B5 'µ' micro sign == 0xC2 0xB5
-			w-- // Need room for two bytes.
-			copy(buf[w:], "µ")
-		default:
-			// print milliseconds
-			prec = 6
-			buf[w] = 'm'
-		}
-		w, u = fmtFrac(buf[:w], u, prec)
-		w = fmtInt(buf[:w], u)
-	} else {
-		var sec = u % uint64(time.Minute)
-		if u%uint64(time.Second) > 0 || sec > 0 {
-			w--
-			buf[w] = 's'
-			w, u = fmtFrac(buf[:w], u, 9)
-			// u is now integer seconds
-			if u == 0 {
-				buf[w] = '0'
-			} else if sec > 0 {
-				w = fmtInt(buf[:w], u%60)
-			}
-		} else {
-			u /= uint64(time.Second)
-		}
-
-		// u is now integer minutes
-		u /= 60
-		if u > 0 {
-			w--
-
-			if u%60 > 0 {
-				buf[w] = 'm'
-				w = fmtInt(buf[:w], u%60)
-			} else {
-				w++
-			}
-
-			// u is now integer hours
-			u /= 60
-			if u > 0 {
-				w--
-
-				if u%24 > 0 {
-					buf[w] = 'h'
-					w = fmtInt(buf[:w], u%24)
-				} else {
-					w++
-				}
-
-				// u is now integer days (d)
-				u /= 24
-				if u > 0 {
-					w--
-					buf[w] = 'd'
-					w = fmtInt(buf[:w], u)
-				}
-			}
-		}
+		w, _ = fmtFrac(buf[:w], nanos, 9)
+		w = fmtInt(buf[:w], seconds%60)
 	}
-
+	minutes := seconds / 60
+	if minutes%60 != 0 {
+		w--
+		buf[w] = 'm'
+		w = fmtInt(buf[:w], minutes%60)
+	}
+	hours := minutes / 60
+	if hours%24 != 0 {
+		w--
+		buf[w] = 'h'
+		w = fmtInt(buf[:w], hours%24)
+	}
+	if days := hours / 24; days != 0 {
+		w--
+		buf[w] = 'd'
+		w = fmtInt(buf[:w], days)
+	}
 	if neg {
 		w--
 		buf[w] = '-'
@@ -324,7 +278,14 @@ func fmtInt(buf []byte, v uint64) int {
 	return w
 }
 
-// PrettyTime 返回毫秒时间的字符串显示，100000 => 1d3h46m40s
+// PrettyTime 返回毫秒时长的字符串显示，100000 => 1m40s。支持完整 int64 范围。
 func PrettyTime(ms int64) string {
-	return PrettyDuration(time.Duration(ms) * time.Millisecond)
+	u := uint64(ms)
+	if ms < 0 {
+		u = -u
+	}
+	if u < MsPerSecond {
+		return PrettyDuration(time.Duration(ms) * time.Millisecond)
+	}
+	return prettyDuration(u/MsPerSecond, u%MsPerSecond*uint64(time.Millisecond), ms < 0)
 }

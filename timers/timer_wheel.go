@@ -227,15 +227,16 @@ func (tm *TimerWheels) AddTimer(tid int64, delayMs int64) {
 // AddTimerAt schedules a Unix-millisecond deadline, converted to the internal
 // clock at the time of this call. It otherwise has the same semantics as AddTimer.
 // In ordinary mode, later wall-clock corrections do not move existing deadlines.
-func (tm *TimerWheels) AddTimerAt(tid int64, deadlineMs int64) {
+func (tm *TimerWheels) AddTimerAt(tid int64, deadlineMs int64) bool {
 	tm.guard1.Lock()
 	defer tm.guard1.Unlock()
 	if tm.closed {
-		return
+		return false
 	}
 	wallMs, now := tm.clock()
 	delay := max(0, saturatedSub(deadlineMs, wallMs))
 	tm.schedule(tid, saturatedAdd(now, delay))
+	return true
 }
 
 // schedule and all node/wheel helpers require guard1 to be held exclusively.

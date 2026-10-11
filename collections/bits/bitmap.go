@@ -13,12 +13,30 @@ const (
 	bitsPerByte = 8  // 用uint8表示
 )
 
+// BitWordsCount returns the number of uint64 words needed to hold bitSize bits.
+// It returns zero if bitSize is non-positive.
 func BitWordsCount(bitSize int) int {
-	return (bitSize + bitsPerWord - 1) / bitsPerWord
+	if bitSize <= 0 {
+		return 0
+	}
+	count := bitSize / bitsPerWord
+	if bitSize%bitsPerWord != 0 {
+		count++
+	}
+	return count
 }
 
+// BitBytesCount returns the number of bytes needed to hold bitSize bits.
+// It returns zero if bitSize is non-positive.
 func BitBytesCount(bitSize int) int {
-	return (bitSize + bitsPerByte - 1) / bitsPerByte
+	if bitSize <= 0 {
+		return 0
+	}
+	count := bitSize / bitsPerByte
+	if bitSize%bitsPerByte != 0 {
+		count++
+	}
+	return count
 }
 
 // TestBit checks if the bit at the given index which starting from LSB is set.
@@ -39,15 +57,18 @@ func SetBit(bm []uint64, i int) bool {
 	return false
 }
 
-// MustSetBit 指定位是否为1，并且自动增长数组，注意使用返回值赋值原数组
+// MustSetBit 将指定位设为1，并且自动增长数组，注意使用返回值赋值原数组。
+// 增长时复用已有容量，并清零新增的word；负索引不修改位图。
 func MustSetBit(bm []uint64, i int) []uint64 {
-	var n = BitWordsCount(i + 1)
-	if n > len(bm) {
-		var newb = make([]uint64, n)
-		copy(newb, bm)
-		bm = newb
+	if i < 0 {
+		return bm
 	}
-	SetBit(bm, i)
+	word := i / bitsPerWord
+	n := word + 1
+	if n > len(bm) {
+		bm = append(bm, make([]uint64, n-len(bm))...)
+	}
+	bm[word] |= uint64(1) << (i % bitsPerWord)
 	return bm
 }
 
@@ -153,6 +174,7 @@ func Format(bm []uint64) string {
 
 // FormatWidth 按指定宽度对齐
 func FormatWidth(bm []uint64, width int) string {
+	width = max(width, 2)
 	var size = len(bm) * bitsPerWord
 	var sb strings.Builder
 	var n = 0

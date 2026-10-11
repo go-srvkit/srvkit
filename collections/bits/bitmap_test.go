@@ -1,6 +1,7 @@
 package bits
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,12 +15,18 @@ func TestBitWordsCount(t *testing.T) {
 	}{
 		{"zero", 0, 0},
 		{"one bit", 1, 1},
+		{"one bit under one word", 63, 1},
 		{"exact one word", 64, 1},
 		{"one bit over one word", 65, 2},
 		{"exact two words", 128, 2},
 		{"large value", 1000, 16},
 		{"negative", -1, 0},
 		{"negative large", -64, 0},
+		{"negative two words", -128, 0},
+		{"minimum int", math.MinInt, 0},
+		{"largest exact word multiple", math.MaxInt - 63, math.MaxInt / 64},
+		{"one bit over largest word multiple", math.MaxInt - 62, math.MaxInt/64 + 1},
+		{"maximum int", math.MaxInt, math.MaxInt/64 + 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -39,11 +46,18 @@ func TestBitBytesCount(t *testing.T) {
 	}{
 		{"zero", 0, 0},
 		{"one bit", 1, 1},
+		{"one bit under one byte", 7, 1},
 		{"exact one byte", 8, 1},
 		{"one bit over one byte", 9, 2},
 		{"exact one word", 64, 8},
 		{"large value", 1000, 125},
 		{"negative", -1, 0},
+		{"negative one byte", -8, 0},
+		{"negative two bytes", -16, 0},
+		{"minimum int", math.MinInt, 0},
+		{"largest exact byte multiple", math.MaxInt - 7, math.MaxInt / 8},
+		{"one bit over largest byte multiple", math.MaxInt - 6, math.MaxInt/8 + 1},
+		{"maximum int", math.MaxInt, math.MaxInt/8 + 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -162,6 +176,86 @@ func TestMustSetBit(t *testing.T) {
 		assert.Equal(t, uint64(0xFF), result[0])
 		assert.True(t, TestBit(result, 100))
 	})
+
+	t.Run("grow beyond capacity clears new words", func(t *testing.T) {
+		bm := []uint64{0xFF, 0xAA}
+
+		result := MustSetBit(bm, 259)
+
+		assert.Equal(t, []uint64{0xFF, 0xAA, 0, 0, 1 << 3}, result)
+	})
+}
+
+func TestMustSetBitReusesCapacity(t *testing.T) {
+	tests := []struct {
+		name   string
+		length int
+		index  int
+		want   []uint64
+	}{
+		{"nonempty bitmap", 1, 133, []uint64{0xFF, 0, 1 << 5}},
+		{"empty bitmap", 0, 64, []uint64{0, 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backing := []uint64{0xFF, ^uint64(0), ^uint64(0), ^uint64(0)}
+			bm := backing[:tt.length]
+
+			result := MustSetBit(bm, tt.index)
+
+			assert.Equal(t, tt.want, result)
+			assert.Equal(t, cap(bm), cap(result))
+			if &result[0] != &backing[0] {
+				t.Fatal("MustSetBit allocated despite sufficient capacity")
+			}
+			assert.Equal(t, ^uint64(0), backing[3], "unused capacity must remain unchanged")
+		})
+	}
+}
+
+func TestMustSetBitNegativeIndex(t *testing.T) {
+	for _, index := range []int{-1, -64, math.MinInt} {
+		var empty []uint64
+		assert.Nil(t, MustSetBit(empty, index))
+
+		bm := []uint64{0xFF}
+		result := MustSetBit(bm, index)
+		assert.Equal(t, []uint64{0xFF}, result)
+		if &result[0] != &bm[0] {
+			t.Fatal("negative index changed the backing array")
+		}
+	}
+}
+
+func TestMustSetBitSequentialGrowth(t *testing.T) {
+	const wordCount = 1024
+	var bm []uint64
+	for word := 0; word < wordCount; word++ {
+		bm = MustSetBit(bm, word*bitsPerWord+bitsPerWord-1)
+		if len(bm) != word+1 {
+			t.Fatalf("word %d: got length %d, want %d", word, len(bm), word+1)
+		}
+	}
+	for word, value := range bm {
+		if value != uint64(1)<<63 {
+			t.Fatalf("word %d: got %#x, want %#x", word, value, uint64(1)<<63)
+		}
+	}
+	assert.Equal(t, wordCount, OnesCount(bm))
+}
+
+func BenchmarkMustSetBitSequentialGrowth(b *testing.B) {
+	const wordCount = 4096
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		var bm []uint64
+		for word := 0; word < wordCount; word++ {
+			bm = MustSetBit(bm, word*bitsPerWord)
+		}
+		if len(bm) != wordCount {
+			b.Fatal("unexpected bitmap length")
+		}
+	}
 }
 
 func TestClearBit(t *testing.T) {

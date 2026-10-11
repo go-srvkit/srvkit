@@ -44,7 +44,7 @@ func (r Range[T]) IsZero() bool {
 
 // Mid returns the middle value of the range.
 func (r Range[T]) Mid() T {
-	return r.Min + (r.Max-r.Min)/2
+	return r.Min + T((uint64(r.Max)-uint64(r.Min))/2)
 }
 
 // Rand returns a random value in the range [Min, Max].
@@ -55,5 +55,12 @@ func (r Range[T]) Rand() T {
 	if r.Max < r.Min {
 		panic("Range.Rand: Min > Max")
 	}
-	return r.Min + T(rand.IntN(int(r.Max-r.Min+1)))
+	var width = uint64(r.Max) - uint64(r.Min) + 1
+	var offset uint64
+	if width == 0 {
+		offset = rand.Uint64() // 恰好覆盖 2^64 个值
+	} else {
+		offset = rand.Uint64N(width)
+	}
+	return T(uint64(r.Min) + offset)
 }

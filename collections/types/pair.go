@@ -33,11 +33,6 @@ func Compare[T1 cmp.Ordered, T2 cmp.Ordered](a, b Pair[T1, T2]) int {
 	}
 }
 
-// Equal returns true if both pairs have the same values.
-func (p Pair[T1, T2]) Equal(other Pair[T1, T2]) bool {
-	return any(p.First) == any(other.First) && any(p.Second) == any(other.Second)
-}
-
 // String returns a string representation of the pair.
 func (p Pair[T1, T2]) String() string {
 	return fmt.Sprintf("(%v, %v)", p.First, p.Second)

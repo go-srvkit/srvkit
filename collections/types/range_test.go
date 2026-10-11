@@ -214,3 +214,166 @@ func TestRange_Rand(t *testing.T) {
 		assert.Panics(t, func() { r.Rand() })
 	})
 }
+
+func checkRangeBoundaryValues[T Integer](t *testing.T, min, max, wantMid T) {
+	t.Helper()
+	r := NewRange(max, min)
+	assert.Equal(t, min, r.Min)
+	assert.Equal(t, max, r.Max)
+	assert.Equal(t, wantMid, r.Mid())
+	assert.True(t, r.In(min))
+	assert.True(t, r.In(max))
+	assert.True(t, r.Contains(min, max))
+	assert.True(t, r.Overlaps(Range[T]{Min: min, Max: min}))
+	assert.True(t, r.Overlaps(Range[T]{Min: max, Max: max}))
+	for i := 0; i < 128; i++ {
+		value := r.Rand()
+		if value < min || value > max {
+			t.Fatalf("Rand() = %d, want in [%d, %d]", value, min, max)
+		}
+	}
+}
+
+func TestRangeIntegerBoundaries(t *testing.T) {
+	t.Run("int", func(t *testing.T) {
+		checkRangeBoundaryValues[int](t, math.MinInt, math.MaxInt, -1)
+	})
+	t.Run("int8", func(t *testing.T) {
+		checkRangeBoundaryValues[int8](t, math.MinInt8, math.MaxInt8, -1)
+	})
+	t.Run("int16", func(t *testing.T) {
+		checkRangeBoundaryValues[int16](t, math.MinInt16, math.MaxInt16, -1)
+	})
+	t.Run("int32", func(t *testing.T) {
+		checkRangeBoundaryValues[int32](t, math.MinInt32, math.MaxInt32, -1)
+	})
+	t.Run("int64", func(t *testing.T) {
+		checkRangeBoundaryValues[int64](t, math.MinInt64, math.MaxInt64, -1)
+	})
+	t.Run("uint", func(t *testing.T) {
+		checkRangeBoundaryValues[uint](t, 0, math.MaxUint, math.MaxUint/2)
+	})
+	t.Run("uint8", func(t *testing.T) {
+		checkRangeBoundaryValues[uint8](t, 0, math.MaxUint8, math.MaxUint8/2)
+	})
+	t.Run("uint16", func(t *testing.T) {
+		checkRangeBoundaryValues[uint16](t, 0, math.MaxUint16, math.MaxUint16/2)
+	})
+	t.Run("uint32", func(t *testing.T) {
+		checkRangeBoundaryValues[uint32](t, 0, math.MaxUint32, math.MaxUint32/2)
+	})
+	t.Run("uint64", func(t *testing.T) {
+		checkRangeBoundaryValues[uint64](t, 0, math.MaxUint64, math.MaxUint64/2)
+	})
+	t.Run("uintptr", func(t *testing.T) {
+		max := ^uintptr(0)
+		checkRangeBoundaryValues[uintptr](t, 0, max, max/2)
+	})
+	t.Run("named signed type", func(t *testing.T) {
+		type score int16
+		checkRangeBoundaryValues[score](t, math.MinInt16, math.MaxInt16, -1)
+	})
+	t.Run("named unsigned type", func(t *testing.T) {
+		type memberID uint64
+		checkRangeBoundaryValues[memberID](t, 0, math.MaxUint64, math.MaxUint64/2)
+	})
+}
+
+func TestRangeWideAndNarrowBoundaries(t *testing.T) {
+	t.Run("signed wide interval", func(t *testing.T) {
+		checkRangeBoundaryValues[int64](t, math.MinInt64, 0, math.MinInt64/2)
+	})
+	t.Run("unsigned interval wider than max int64", func(t *testing.T) {
+		checkRangeBoundaryValues[uint64](t, 0, uint64(1)<<63, uint64(1)<<62)
+	})
+	t.Run("near minimum int64", func(t *testing.T) {
+		checkRangeBoundaryValues[int64](t, math.MinInt64, math.MinInt64+100, math.MinInt64+50)
+	})
+	t.Run("near maximum int64", func(t *testing.T) {
+		checkRangeBoundaryValues[int64](t, math.MaxInt64-100, math.MaxInt64, math.MaxInt64-50)
+	})
+	t.Run("near maximum uint64", func(t *testing.T) {
+		checkRangeBoundaryValues[uint64](t, math.MaxUint64-100, math.MaxUint64, math.MaxUint64-50)
+	})
+	t.Run("single minimum int64", func(t *testing.T) {
+		checkRangeBoundaryValues[int64](t, math.MinInt64, math.MinInt64, math.MinInt64)
+	})
+	t.Run("single maximum int64", func(t *testing.T) {
+		checkRangeBoundaryValues[int64](t, math.MaxInt64, math.MaxInt64, math.MaxInt64)
+	})
+	t.Run("single maximum uint64", func(t *testing.T) {
+		checkRangeBoundaryValues[uint64](t, math.MaxUint64, math.MaxUint64, math.MaxUint64)
+	})
+	t.Run("zero value", func(t *testing.T) {
+		var r Range[uint64]
+		assert.True(t, r.IsZero())
+		checkRangeBoundaryValues[uint64](t, 0, 0, 0)
+	})
+}
+
+func TestRangeMidAll8BitIntervals(t *testing.T) {
+	t.Run("int8", func(t *testing.T) {
+		for min := math.MinInt8; min <= math.MaxInt8; min++ {
+			for max := min; max <= math.MaxInt8; max++ {
+				r := NewRange(int8(max), int8(min))
+				want := min + (max-min)/2 // Wider int arithmetic cannot overflow here.
+				if got := int(r.Mid()); got != want {
+					t.Fatalf("[%d, %d].Mid() = %d, want %d", min, max, got, want)
+				}
+			}
+		}
+	})
+	t.Run("uint8", func(t *testing.T) {
+		for min := 0; min <= math.MaxUint8; min++ {
+			for max := min; max <= math.MaxUint8; max++ {
+				r := NewRange(uint8(max), uint8(min))
+				want := min + (max-min)/2
+				if got := int(r.Mid()); got != want {
+					t.Fatalf("[%d, %d].Mid() = %d, want %d", min, max, got, want)
+				}
+			}
+		}
+	})
+}
+
+func TestRangeRelationsSmallIntervals(t *testing.T) {
+	var intervals []Range[int]
+	for min := -3; min <= 3; min++ {
+		for max := min; max <= 3; max++ {
+			intervals = append(intervals, NewRange(min, max))
+		}
+	}
+	for _, outer := range intervals {
+		for value := -4; value <= 4; value++ {
+			want := value >= outer.Min && value <= outer.Max
+			if outer.In(value) != want {
+				t.Fatalf("%v.In(%d) != %t", outer, value, want)
+			}
+		}
+		for _, inner := range intervals {
+			contains, overlaps := true, false
+			for value := inner.Min; value <= inner.Max; value++ {
+				inside := outer.In(value)
+				contains = contains && inside
+				overlaps = overlaps || inside
+			}
+			if outer.Contains(inner.Min, inner.Max) != contains {
+				t.Fatalf("%v.Contains(%d, %d) != %t", outer, inner.Min, inner.Max, contains)
+			}
+			if outer.Overlaps(inner) != overlaps || inner.Overlaps(outer) != overlaps {
+				t.Fatalf("overlap between %v and %v should be %t", outer, inner, overlaps)
+			}
+		}
+	}
+}
+
+func TestRangeRandInvalidBoundaries(t *testing.T) {
+	t.Run("negative signed bounds", func(t *testing.T) {
+		r := Range[int64]{Min: -1, Max: math.MinInt64}
+		assert.Panics(t, func() { r.Rand() })
+	})
+	t.Run("unsigned bounds", func(t *testing.T) {
+		r := Range[uint64]{Min: math.MaxUint64, Max: 0}
+		assert.Panics(t, func() { r.Rand() })
+	})
+}

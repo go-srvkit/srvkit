@@ -144,7 +144,7 @@ func (t *TcpSession) write(netMsg *NetMessage, buf *bytes.Buffer) error {
 	if verbose {
 		logger.Debugf("TcpSession: node %v write messge %d %T", t.node, netMsg.MsgId, netMsg.Body)
 	}
-	if err := t.codec.EncodeNetMsg(netMsg, t.decrypt, t.signCRC, buf); err != nil {
+	if err := t.codec.EncodeNetMsg(netMsg, t.encrypt, t.signCRC, buf); err != nil {
 		return err
 	}
 	if _, err := t.conn.Write(buf.Bytes()); err != nil {

@@ -25,6 +25,9 @@ type sizedPool struct {
 }
 
 func newSizedPool(size int) *sizedPool {
+	if size <= 0 {
+		return nil
+	}
 	return &sizedPool{
 		size: size,
 		pool: sync.Pool{
@@ -46,7 +49,7 @@ type BucketPool struct {
 	pools   []*sizedPool
 }
 
-// New returns Pool which has buckets from minSize to maxSize.
+// NewBucketPool returns Pool which has buckets from minSize to maxSize.
 // Buckets increase with the power of two, i.e with multiplier 2: [2b, 4b, 16b, ... , 1024b]
 // Last pool will always be capped to maxSize.
 func NewBucketPool(minSize, maxSize int) *BucketPool {
@@ -96,6 +99,9 @@ func (p *BucketPool) Get(size int) *[]byte {
 func (p *BucketPool) Put(b *[]byte) {
 	sp := p.findPool(cap(*b))
 	if sp == nil {
+		return
+	}
+	if cap(*b) != sp.size {
 		return
 	}
 	*b = (*b)[:cap(*b)]

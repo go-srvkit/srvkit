@@ -4,6 +4,7 @@
 package slice
 
 import (
+	"cmp"
 	"sort"
 )
 
@@ -20,7 +21,7 @@ type (
 	UintSlice    []uint
 	Int64Slice   []int64
 	Uint64Slice  []uint64
-	Float32Slice []float32
+	Float32Slice []float32 // NaNs sort before non-NaNs, like sort.Float64Slice.
 
 	IntSlice     = sort.IntSlice
 	Float64Slice = sort.Float64Slice
@@ -64,5 +65,5 @@ func (x Uint64Slice) Less(i, j int) bool { return x[i] < x[j] }
 func (x Uint64Slice) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }
 
 func (x Float32Slice) Len() int           { return len(x) }
-func (x Float32Slice) Less(i, j int) bool { return x[i] < x[j] }
+func (x Float32Slice) Less(i, j int) bool { return cmp.Less(x[i], x[j]) }
 func (x Float32Slice) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }

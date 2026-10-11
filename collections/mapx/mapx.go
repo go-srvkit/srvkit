@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"maps"
 	"slices"
-	"sort"
 
 	"gopkg.in/srvkit.v1/collections/types"
 )
@@ -42,6 +41,7 @@ func MapKeyValues[M ~map[K]V, K comparable, V any](m M) ([]K, []V) {
 }
 
 // MapOrderedKeys 返回map里已排序的key列表
+// 浮点key中的NaN排在其他key之前，多个NaN的相对顺序未定义。
 func MapOrderedKeys[M ~map[K]V, K cmp.Ordered, V any](m M) []K {
 	var keys = MapKeys(m)
 	slices.Sort(keys)
@@ -49,38 +49,59 @@ func MapOrderedKeys[M ~map[K]V, K cmp.Ordered, V any](m M) []K {
 }
 
 // MapOrderedValues 返回map里按key排序的value列表
+// 浮点key中的NaN排在其他key之前，多个NaN对应value的相对顺序未定义。
 func MapOrderedValues[M ~map[K]V, K cmp.Ordered, V any](m M) []V {
-	var keys = MapKeys(m)
-	slices.Sort(keys)
+	var entries = mapEntries(m)
+	slices.SortFunc(entries, func(a, b types.Pair[K, V]) int {
+		return cmp.Compare(a.First, b.First)
+	})
 	var values = make([]V, 0, len(m))
-	for _, k := range keys {
-		values = append(values, m[k])
+	for _, entry := range entries {
+		values = append(values, entry.Second)
 	}
 	return values
 }
 
 // MapOrderedKeyValues 返回map里已排序的key和value列表
+// 浮点key中的NaN排在其他key之前，多个NaN的相对顺序未定义，但键值配对保持不变。
 func MapOrderedKeyValues[M ~map[K]V, K cmp.Ordered, V any](m M) ([]K, []V) {
-	var keys = MapKeys(m)
-	slices.Sort(keys)
+	var entries = mapEntries(m)
+	slices.SortFunc(entries, func(a, b types.Pair[K, V]) int {
+		return cmp.Compare(a.First, b.First)
+	})
+	var keys = make([]K, 0, len(m))
 	var values = make([]V, 0, len(m))
-	for _, k := range keys {
-		values = append(values, m[k])
+	for _, entry := range entries {
+		keys = append(keys, entry.First)
+		values = append(values, entry.Second)
 	}
 	return keys, values
 }
 
 // MapKeysSortedByValue 返回map里按value排序的key列表
+// value相同时按key排序；浮点key和value均按cmp.Compare的规则将NaN视为相等且小于其他值。
 func MapKeysSortedByValue[M ~map[K]V, K cmp.Ordered, V cmp.Ordered](m M) []K {
-	var keys = MapKeys(m)
-	sort.Slice(keys, func(i, j int) bool {
-		ki, kj := keys[i], keys[j]
-		if m[ki] == m[kj] {
-			return ki < kj // 值相同时按key排序
+	var entries = mapEntries(m)
+	slices.SortFunc(entries, func(a, b types.Pair[K, V]) int {
+		if order := cmp.Compare(a.Second, b.Second); order != 0 {
+			return order
 		}
-		return m[ki] < m[kj]
+		return cmp.Compare(a.First, b.First)
 	})
+	var keys = make([]K, 0, len(m))
+	for _, entry := range entries {
+		keys = append(keys, entry.First)
+	}
 	return keys
+}
+
+// mapEntries preserves values for non-reflexive keys (NaN), which cannot be looked up with m[k].
+func mapEntries[M ~map[K]V, K comparable, V any](m M) []types.Pair[K, V] {
+	var entries = make([]types.Pair[K, V], 0, len(m))
+	for k, v := range m {
+		entries = append(entries, types.MakePair(k, v))
+	}
+	return entries
 }
 
 // MapUnion 返回两个map的并集, copy of a ∪ b

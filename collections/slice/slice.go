@@ -75,9 +75,6 @@ func Shrink[E any](s []E) []E {
 	if len(s) == 0 {
 		return nil
 	}
-	if len(s) == cap(s) {
-		return s
-	}
 	var a = make([]E, len(s))
 	copy(a, s)
 	return a

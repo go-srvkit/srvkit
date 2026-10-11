@@ -8,7 +8,7 @@ import (
 	"slices"
 )
 
-// 有序数组常用算法
+// 有序数组常用算法：按cmp.Compare升序排列，NaN小于非NaN，NaN之间视为相等。
 
 // OrderedIndexOf `target`在有序数组`ordered`中的索引，如果不存在返回-1
 func OrderedIndexOf[T cmp.Ordered](ordered []T, target T) int {
@@ -44,6 +44,7 @@ func OrderedDelete[T cmp.Ordered](ordered []T, target T) []T {
 }
 
 // OrderedUnion 有序数组并集, A ∪ B，假设A和B都是有序
+// 浮点数按cmp.Compare比较，NaN小于非NaN，NaN之间视为相等。
 func OrderedUnion[T cmp.Ordered](a, b []T) []T {
 	if len(a) == 0 {
 		return append([]T{}, b...) // slice clone
@@ -54,10 +55,10 @@ func OrderedUnion[T cmp.Ordered](a, b []T) []T {
 	var c = make([]T, 0, len(a)+len(b))
 	var i, j int
 	for i < len(a) && j < len(b) {
-		if a[i] < b[j] {
+		if order := cmp.Compare(a[i], b[j]); order < 0 {
 			c = append(c, a[i])
 			i++
-		} else if a[i] > b[j] {
+		} else if order > 0 {
 			c = append(c, b[j])
 			j++
 		} else {
@@ -78,6 +79,7 @@ func OrderedUnion[T cmp.Ordered](a, b []T) []T {
 }
 
 // OrderedIntersect 有序数组交集, A ∩ B，假设A和B都是有序
+// 浮点数按cmp.Compare比较，NaN小于非NaN，NaN之间视为相等。
 func OrderedIntersect[T cmp.Ordered](a, b []T) []T {
 	if len(a) == 0 || len(b) == 0 {
 		return nil
@@ -85,9 +87,9 @@ func OrderedIntersect[T cmp.Ordered](a, b []T) []T {
 	var c = make([]T, 0, min(len(a), len(b)))
 	var i, j int
 	for i < len(a) && j < len(b) {
-		if a[i] < b[j] {
+		if order := cmp.Compare(a[i], b[j]); order < 0 {
 			i++
-		} else if a[i] > b[j] {
+		} else if order > 0 {
 			j++
 		} else {
 			c = append(c, a[i])

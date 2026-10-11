@@ -79,6 +79,7 @@ func (e *Entry[K, V]) Height() int {
 
 type Comparator[T any] func(a, b T) int
 
+// Map 红黑树map，引用语义，非线程安全；使用`New`创建，创建后不要复制
 type Map[K, V comparable] struct {
 	root       *Entry[K, V]
 	comparator Comparator[K]
@@ -87,6 +88,9 @@ type Map[K, V comparable] struct {
 }
 
 func New[K, V comparable](comparator Comparator[K]) *Map[K, V] {
+	if comparator == nil {
+		return nil
+	}
 	return &Map[K, V]{
 		comparator: comparator,
 	}
@@ -157,14 +161,17 @@ func (m *Map[K, V]) LastKey() (K, bool) {
 	return keyOf(m.getLastEntry())
 }
 
+// RootEntry 根节点，外部保留引用会有删除后不一致的风险
 func (m *Map[K, V]) RootEntry() *Entry[K, V] {
 	return m.root
 }
 
+// FirstEntry 平衡树最左节点，外部保留引用会有删除后不一致的风险
 func (m *Map[K, V]) FirstEntry() *Entry[K, V] {
 	return m.getFirstEntry()
 }
 
+// LastEntry 平衡树最右节点，外部保留引用会有删除后不一致的风险
 func (m *Map[K, V]) LastEntry() *Entry[K, V] {
 	return m.getLastEntry()
 }
@@ -296,7 +303,8 @@ func (m *Map[K, V]) ToSysMap() map[K]V {
 // Put associates the specified value with the specified key in this map.
 // If the map previously contained a mapping for the key, the old value is replaced.
 func (m *Map[K, V]) Put(key K, value V) V {
-	return m.put(key, value, true)
+	previous, _ := m.put(key, value, true)
+	return previous
 }
 
 // Store sets the value for a key, equivalent to Put.
@@ -307,18 +315,13 @@ func (m *Map[K, V]) Store(key K, value V) {
 // Swap swaps the value for a key and returns the previous value if any.
 // The loaded result reports whether the key was present.
 func (m *Map[K, V]) Swap(key K, value V) (previous V, loaded bool) {
-	var p = m.getEntry(key)
-	if p != nil {
-		loaded = true
-		previous = p.value
-	}
-	m.put(key, value, true)
-	return
+	return m.put(key, value, true)
 }
 
 // PutIfAbsent put a key-value pair if the key is not already associated with a value.
 func (m *Map[K, V]) PutIfAbsent(key K, value V) V {
-	return m.put(key, value, false)
+	previous, _ := m.put(key, value, false)
+	return previous
 }
 
 // Remove removes the mapping for this key from this Map if present.
@@ -507,12 +510,11 @@ func (m *Map[K, V]) getLowerEntry(key K) *Entry[K, V] {
 	return nil
 }
 
-func (m *Map[K, V]) put(key K, value V, replaceOld bool) V {
-	var zero V
+func (m *Map[K, V]) put(key K, value V, replaceOld bool) (previous V, existed bool) {
 	var t = m.root
 	if t == nil {
 		m.addEntryToEmptyMap(key, value)
-		return zero
+		return previous, false
 	}
 	var cmp = 0
 	var parent *Entry[K, V]
@@ -524,18 +526,18 @@ func (m *Map[K, V]) put(key K, value V, replaceOld bool) V {
 		} else if cmp > 0 {
 			t = t.right
 		} else {
-			var oldValue = t.value
+			previous = t.value
 			if replaceOld {
 				t.value = value
 			}
-			return oldValue
+			return previous, true
 		}
 		if t == nil {
 			break
 		}
 	}
 	m.addEntry(key, value, parent, cmp < 0)
-	return zero
+	return previous, false
 }
 
 func (m *Map[K, V]) addEntry(key K, value V, parent *Entry[K, V], addToLeft bool) {

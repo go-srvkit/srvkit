@@ -608,6 +608,46 @@ func TestPut(t *testing.T) {
 	}
 }
 
+func TestPutResult(t *testing.T) {
+	tests := []struct {
+		name        string
+		initial     map[int]string
+		key         int
+		replaceOld  bool
+		wantPrev    string
+		wantExisted bool
+		wantValue   string
+	}{
+		{"insert into empty map", nil, 2, true, "", false, "new"},
+		{"insert if absent into empty map", nil, 2, false, "", false, "new"},
+		{"insert left child", map[int]string{2: "old"}, 1, true, "", false, "new"},
+		{"insert right child if absent", map[int]string{2: "old"}, 3, false, "", false, "new"},
+		{"replace existing value", map[int]string{2: "old"}, 2, true, "old", true, "new"},
+		{"keep existing value", map[int]string{2: "old"}, 2, false, "old", true, "old"},
+		{"replace existing zero value", map[int]string{2: ""}, 2, true, "", true, "new"},
+		{"keep existing zero value", map[int]string{2: ""}, 2, false, "", true, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewTreeMapOf(tt.initial)
+			version := m.version
+			previous, existed := m.put(tt.key, "new", tt.replaceOld)
+			assert.Equal(t, tt.wantPrev, previous)
+			assert.Equal(t, tt.wantExisted, existed)
+			value, found := m.Get(tt.key)
+			assert.True(t, found)
+			assert.Equal(t, tt.wantValue, value)
+			wantSize := len(tt.initial)
+			if !tt.wantExisted {
+				wantSize++
+				version++
+			}
+			assert.Equal(t, wantSize, m.Size())
+			assert.Equal(t, version, m.version)
+		})
+	}
+}
+
 // --- Store ---
 
 func TestStore(t *testing.T) {
@@ -660,6 +700,15 @@ func TestSwap(t *testing.T) {
 			func() *Map[int, string] { return NewOrderedTreeMap[int, string]() },
 			1, "a", "", false, "a",
 		},
+		{
+			"swap existing zero value",
+			func() *Map[int, string] {
+				m := NewOrderedTreeMap[int, string]()
+				m.Put(1, "")
+				return m
+			},
+			1, "b", "", true, "b",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -670,6 +719,27 @@ func TestSwap(t *testing.T) {
 			val, found := m.Get(tt.key)
 			assert.True(t, found)
 			assert.Equal(t, tt.wantNewVal, val)
+		})
+	}
+}
+
+func TestSwapSingleSearch(t *testing.T) {
+	for _, key := range []int{0, 1, 3, 4} {
+		t.Run(fmt.Sprintf("key=%d", key), func(t *testing.T) {
+			comparisons := 0
+			m := New[int, string](func(a, b int) int {
+				comparisons++
+				return cmp.Compare(a, b)
+			})
+			for _, k := range []int{2, 1, 3} {
+				m.Put(k, "old")
+			}
+			comparisons = 0
+			m.Get(key)
+			wantComparisons := comparisons
+			comparisons = 0
+			m.Swap(key, "new")
+			assert.Equal(t, wantComparisons, comparisons, "Swap should search the tree only once")
 		})
 	}
 }
@@ -1026,8 +1096,10 @@ func TestCustomComparator(t *testing.T) {
 
 func TestRedBlackTreeIntegrity(t *testing.T) {
 	m := NewOrderedTreeMap[int, string]()
+	requireRedBlackTree(t, m)
 	for i := 0; i < 100; i++ {
 		m.Put(i, fmt.Sprintf("v%d", i))
+		requireRedBlackTree(t, m)
 	}
 	assert.Equal(t, 100, m.Size())
 
@@ -1097,8 +1169,10 @@ func TestDeleteRootRepeatedly(t *testing.T) {
 		m.Put(i, fmt.Sprintf("v%d", i))
 	}
 	for m.Size() > 0 {
-		fk, _ := m.FirstKey()
-		assert.True(t, m.Remove(fk))
+		requireRedBlackTree(t, m)
+		rootKey := m.RootEntry().GetKey()
+		assert.True(t, m.Remove(rootKey))
+		requireRedBlackTree(t, m)
 	}
 	assert.True(t, m.IsEmpty())
 }
@@ -1108,13 +1182,14 @@ func TestDeleteRootRepeatedly(t *testing.T) {
 func TestLargeScaleRandomOps(t *testing.T) {
 	m := NewOrderedTreeMap[int, int]()
 	ref := make(map[int]int)
+	rng := rand.New(rand.NewSource(42))
 
 	for i := 0; i < 1000; i++ {
-		op := rand.Intn(3)
-		key := rand.Intn(200)
+		op := rng.Intn(3)
+		key := rng.Intn(200)
 		switch op {
 		case 0:
-			val := rand.Int()
+			val := rng.Int()
 			m.Put(key, val)
 			ref[key] = val
 		case 1:
@@ -1128,6 +1203,7 @@ func TestLargeScaleRandomOps(t *testing.T) {
 				assert.Equal(t, v2, v1)
 			}
 		}
+		requireMapMatches(t, m, ref)
 	}
 	assert.Equal(t, len(ref), m.Size())
 

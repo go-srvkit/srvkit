@@ -9,25 +9,37 @@ import (
 )
 
 var (
-	_logger = NewConfig().Build() // core logger
-	_sugar  = _logger.Sugar()     // sugared logger
+	_logger      = NewConfig().Build()
+	_directSugar = _logger.Sugar()
+	_sugar       = _logger.WithOptions(zap.AddCallerSkip(1)).Sugar()
 )
 
+// Sugared returns the logger for direct use without skipping a package wrapper.
 func Sugared() *zap.SugaredLogger {
-	return _sugar
+	return _directSugar
 }
 
+// Logger returns the logger for direct use. Logging is safe concurrently once
+// initialization is complete; SetLogger must not run concurrently with readers.
 func Logger() *zap.Logger {
 	return _logger
 }
 
-// SetLogger 设置logger对象，非线程安全，仅在初始化阶段调用
+// SetLogger installs a non-nil logger. Package logging functions automatically
+// skip their wrapper frame. This function is not safe for concurrent use; call
+// it only during initialization. The caller retains ownership of both loggers
+// and is responsible for releasing their outputs.
 func SetLogger(log *zap.Logger) {
+	directSugar := log.Sugar()
+	wrapperSugar := log.WithOptions(zap.AddCallerSkip(1)).Sugar()
 	_logger = log
-	_sugar = log.Sugar()
+	_directSugar = directSugar
+	_sugar = wrapperSugar
 }
 
-// SetLoggerWith 设置logger对象，带core和callerSkip参数，非线程安全，仅在初始化阶段调用
+// SetLoggerWith installs a logger using core. callerSkip counts extra application
+// frames, excluding this package's logging wrappers. Like SetLogger, it may only
+// be called during initialization and does not take ownership of the output.
 func SetLoggerWith(core zapcore.Core, callerSkip int) {
 	SetLogger(zap.New(core,
 		zap.AddCallerSkip(callerSkip),

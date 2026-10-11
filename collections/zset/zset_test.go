@@ -101,6 +101,21 @@ func TestSortedSet_GetRank(t *testing.T) {
 	}
 }
 
+func TestSortedSet_GetRank_ZeroElement(t *testing.T) {
+	st := &SortedSet[int]{
+		dict: map[int]int64{0: 0, 1: 10},
+		zsl:  newSkipListWithZeroElement(),
+	}
+	assert.Equal(t, 0, st.GetRank(0, false))
+	assert.Equal(t, 1, st.GetRank(0, true))
+	assert.Equal(t, 1, st.GetRank(1, false))
+	assert.Equal(t, 0, st.GetRank(1, true))
+	assert.Equal(t, -1, st.GetRank(2, false))
+	assert.Equal(t, -1, st.GetRank(2, true))
+	assert.Equal(t, 2, st.Count(0, 10))
+	assert.Equal(t, 1, st.Count(0, 0))
+}
+
 func TestSortedSet_GetScore(t *testing.T) {
 	var st = NewSortedSet(cmp.Compare[string])
 	for i := 100; i > 0; i-- {

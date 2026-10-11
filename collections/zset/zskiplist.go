@@ -294,8 +294,8 @@ func (zsl *ZSkipList[T]) GetRank(score int64, ele T) int {
 			x = x.level[i].forward
 		}
 
-		// x might be equal to zsl->header, so test if obj is non-nil
-		if x != nil && x.Score == score && zsl.comparator(x.Ele, ele) == 0 {
+		// The head sentinel may share a real element's zero score and value.
+		if x != zsl.head && x.Score == score && zsl.comparator(x.Ele, ele) == 0 {
 			return rank
 		}
 	}

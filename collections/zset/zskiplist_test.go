@@ -20,6 +20,7 @@ func uniqueScoreGen() func() int64 {
 		for {
 			var score = rand.Int63() % 1000000
 			if _, found := dict[score]; !found {
+				dict[score] = true
 				return score
 			}
 		}
@@ -175,6 +176,39 @@ func TestZSkipList_GetRank(t *testing.T) {
 		var rank = sl.GetRank(score, elem)
 		assert.Equal(t, i, rank)
 	}
+}
+
+// newSkipListWithZeroElement builds a valid two-level list deterministically.
+// The zero element only appears at level 0, so a search must descend past head.
+func newSkipListWithZeroElement() *ZSkipList[int] {
+	sl := NewZSkipList(cmp.Compare[int])
+	first := newZSkipListNode(1, 0, 0)
+	last := newZSkipListNode(2, 10, 1)
+	sl.head.level[0] = zskipListLevel[int]{forward: first, span: 1}
+	sl.head.level[1] = zskipListLevel[int]{forward: last, span: 2}
+	first.level[0] = zskipListLevel[int]{forward: last, span: 1}
+	last.backward = first
+	sl.tail = last
+	sl.length = 2
+	sl.level = 2
+	return sl
+}
+
+func TestZSkipList_GetRank_ZeroElement(t *testing.T) {
+	sl := newSkipListWithZeroElement()
+	assert.Equal(t, 1, sl.GetRank(0, 0))
+	assert.Equal(t, 2, sl.GetRank(10, 1))
+	assert.Equal(t, 0, sl.GetRank(0, 1))
+	assert.Equal(t, 0, sl.GetRank(10, 0))
+}
+
+func TestZSkipList_GetRank_Empty(t *testing.T) {
+	// This comparator accepts real elements but cannot compare the nil sentinel.
+	sl := NewZSkipList(func(a, b *int) int {
+		return cmp.Compare(*a, *b)
+	})
+	ele := 1
+	assert.Equal(t, 0, sl.GetRank(0, &ele))
 }
 
 func TestZSkipList_GetElementByRank(t *testing.T) {

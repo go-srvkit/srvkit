@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/melbahja/goph/v2"
+
 	"gopkg.in/srvkit.v1/gutil"
 	"gopkg.in/srvkit.v1/logger"
 )
@@ -44,7 +45,7 @@ func getDefaultSSHKeyFile() (string, error) {
 	candidates := []string{"id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"}
 	for _, name := range candidates {
 		p := filepath.Join(dirname, ".ssh", name)
-		if gutil.IsFileExist(p) {
+		if b, err := gutil.IsRegularFileExists(p); err == nil && b {
 			return p, nil
 		}
 	}
@@ -76,7 +77,7 @@ func createSSHClient(host string, port uint16, user, pass string, timeout time.D
 	{
 		if homedir, er := os.UserHomeDir(); er == nil {
 			var filename = filepath.Join(homedir, ".ssh/known_hosts")
-			if gutil.IsFileExist(filename) {
+			if b, err := gutil.IsRegularFileExists(filename); err == nil && b {
 				opts = append(opts, goph.WithKnownHosts(filename))
 			}
 		}

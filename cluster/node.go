@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -125,7 +126,8 @@ func (n NodeInfo) Equal(other NodeInfo) bool {
 }
 
 func (n NodeInfo) String() string {
-	return gutil.JSONStringify(n)
+	s, _ := gutil.JSONStringify(n)
+	return s
 }
 
 func (n NodeInfo) GetID() uint32 {
@@ -163,7 +165,10 @@ func unmarshalNode(data []byte, node *NodeInfo) error {
 	return nil
 }
 
-// NodeMap 按服务类型区分的节点信息
+// NodeMap 按服务类型保存节点信息，零值可直接使用，公开方法可并发调用。
+// 首次使用后不可复制。mut 保护索引和切片，存入的 NodeInfo 不再被内部修改。
+// 输入和快照只复制 NodeInfo 第一层；嵌套 map、slice、指针等值仍共享，
+// 调用方应保持这些值只读，或自行同步访问。传入节点在方法返回前不可修改。
 type NodeMap struct {
 	mut   sync.RWMutex
 	nodes map[string][]NodeInfo
@@ -173,12 +178,19 @@ func NewNodeMap() *NodeMap {
 	return new(NodeMap).Init()
 }
 
-// Init 初始化
+// Init 初始化，保留已有节点。零值也可直接调用其他方法。
 func (m *NodeMap) Init() *NodeMap {
+	m.mut.Lock()
+	m.initLocked()
+	m.mut.Unlock()
+	return m
+}
+
+// initLocked 在持有写锁时初始化存储。
+func (m *NodeMap) initLocked() {
 	if m.nodes == nil {
 		m.nodes = make(map[string][]NodeInfo)
 	}
-	return m
 }
 
 // TotalCount 所有节点数量
@@ -216,12 +228,38 @@ func (m *NodeMap) HasType(nodeType string) bool {
 	return found
 }
 
-// GetNodes 所有本类型的节点，不要修改返回值
-func (m *NodeMap) GetNodes(nodeType string) []NodeInfo {
+// GetNodesRef 返回本类型的节点
+func (m *NodeMap) GetNodesRef(nodeType string) []NodeInfo {
 	m.mut.RLock()
 	v := m.nodes[nodeType]
 	m.mut.RUnlock()
 	return v
+}
+
+// GetNodesCopy 返回独立的切片及 NodeInfo 第一层副本，保留节点顺序。
+// 无节点时返回 nil；修改返回的切片和节点字段不影响内部存储。
+// 嵌套引用值仍然共享，参见 NodeMap 的说明。
+func (m *NodeMap) GetNodesCopy(nodeType string) []NodeInfo {
+	m.mut.RLock()
+	defer m.mut.RUnlock()
+	nodes := m.nodes[nodeType]
+	if len(nodes) == 0 {
+		return nil
+	}
+	result := make([]NodeInfo, len(nodes))
+	for i, node := range nodes {
+		result[i] = node.Clone()
+	}
+	return result
+}
+
+// GetRefNodes 返回独立的切片，其中的 NodeInfo 引用仅供只读访问。
+// 不可修改返回的 NodeInfo 或其嵌套值；需要修改时使用 GetNodesCopy。
+// 后续增删或替换节点不会修改已返回的切片和 NodeInfo。
+func (m *NodeMap) GetRefNodes(nodeType string) []NodeInfo {
+	m.mut.RLock()
+	defer m.mut.RUnlock()
+	return slices.Clone(m.nodes[nodeType])
 }
 
 // findNode find node index, with lock holding
@@ -245,6 +283,7 @@ func (m *NodeMap) AddNode(node NodeInfo) {
 func (m *NodeMap) FillNodeTypes(dep []string) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
+	m.initLocked()
 	for _, nodeType := range dep {
 		if _, found := m.nodes[nodeType]; !found {
 			m.nodes[nodeType] = nil
@@ -252,13 +291,14 @@ func (m *NodeMap) FillNodeTypes(dep []string) {
 	}
 }
 
-// UpsertNode 添加一个节点
+// UpsertNode 按类型和 ID 插入或替换节点，保存 NodeInfo 第一层副本。
+// 插入返回 true，替换返回 false；替换保留原有位置。
 func (m *NodeMap) UpsertNode(node NodeInfo) bool {
+	node = node.Clone()
+	nodeType, nodeId := node.GetTypeName(), node.GetID()
 	m.mut.Lock()
 	defer m.mut.Unlock()
-
-	var nodeType = node.GetTypeName()
-	var nodeId = node.GetID()
+	m.initLocked()
 	var nodes = m.nodes[nodeType]
 	for i, v := range nodes {
 		var nid = v.GetID()
@@ -277,14 +317,15 @@ func (m *NodeMap) Clear() {
 	m.mut.Unlock()
 }
 
-// DeleteNodes 删除某一类型的所有节点
+// DeleteNodes 删除某一类型的所有节点，保留该类型，包含原先不存在的类型。
 func (m *NodeMap) DeleteNodes(nodeType string) {
 	m.mut.Lock()
+	m.initLocked()
 	m.nodes[nodeType] = nil
 	m.mut.Unlock()
 }
 
-// DeleteNode 删除一个节点
+// DeleteNode 删除一个节点，不保证剩余节点顺序。删除最后一个节点时移除该类型。
 func (m *NodeMap) DeleteNode(nodeType string, id uint32) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
@@ -302,8 +343,15 @@ func (m *NodeMap) DeleteNode(nodeType string, id uint32) {
 }
 
 func (m *NodeMap) String() string {
+	// 先获取切片快照，再格式化不可变的节点；自定义 JSON 序列化可能回调 NodeMap。
+	m.mut.RLock()
+	snapshot := make(map[string][]NodeInfo, len(m.nodes))
+	for name, nodes := range m.nodes {
+		snapshot[name] = slices.Clone(nodes)
+	}
+	m.mut.RUnlock()
 	var sb strings.Builder
-	for name, set := range m.nodes {
+	for name, set := range snapshot {
 		fmt.Fprintf(&sb, "%s: %v,\n", name, set)
 	}
 	return sb.String()

@@ -10,6 +10,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"runtime"
 	"strings"
@@ -108,4 +110,16 @@ func RuntimeMemBytes() uint64 {
 func IsFileNotExist(filename string) bool {
 	_, err := os.Lstat(filename)
 	return os.IsNotExist(err)
+}
+
+// IsRegularFileExists test if a regular file exists
+func IsRegularFileExists(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		return info.Mode().IsRegular(), nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return false, err // 例如权限不足，不能误判为“不存在”
 }
